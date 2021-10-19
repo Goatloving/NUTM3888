@@ -312,10 +312,9 @@ avg_RMSE
 ```
 
 ```{r logistic regression}
-# Warning: This chuck of code takes 5-10 mins to run
-null = glm(cvd_score~1,data=dat3,family=binomial)
-full = glm(cvd_score~.,data=dat3,family=binomial)
-n = nrow(dat3)
+null = glm(cvd_score~1,data=dat33.balanced,family=binomial("logit"),maxit = 100)
+full = glm(cvd_score~.,data=dat33.balanced,family=binomial("logit"),maxit = 100)
+n= nrow(dat33.balanced)
 # stepwise from full model using BIC
 stepBICfull <- step(full,k=log(n))
 # stepwise from full model using AIC 
@@ -326,7 +325,4 @@ stepBICnull <- step(null,scope=list(lower=null,upper=full),k=log(n))
 stepAICnull <- step(null,scope=list(lower=null,upper=full),k=2)
 ```
 
-```{r quadratic discriminant}
-
-```
 

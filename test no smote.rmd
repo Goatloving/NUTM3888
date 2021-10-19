@@ -307,7 +307,5 @@ avg_RMSE
 
 
 
-```{r quadratic discriminant}
 
-```
 
