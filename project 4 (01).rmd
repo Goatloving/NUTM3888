@@ -44,7 +44,6 @@ library(broom)
 library(jtools)
 ```
 
-
 ```{r load data}
 load("tech_data.Rdata") # load cleaned data from John's code, make sure you have the Rdata file within the working directory
 ```
@@ -67,7 +66,7 @@ dat2$EXLWVBC<-as.numeric(as.character(dat2$EXLWVBC))
 dat2
 ```
 
-```{r create factor scores}
+```{r create factor scores 0,1,2,3}
 dat20<-dat2 %>% mutate(
  Sys_score=ifelse(SYSTOL<120,0,ifelse(SYSTOL<130,1,ifelse(SYSTOL<140,2,ifelse(SYSTOL>=998,NA,3)))),
  Dis_score=ifelse(DIASTOL<80,0,ifelse(DIASTOL<90,1,ifelse(DIASTOL<100,2,ifelse(DIASTOL>=998,NA,3)))),  
@@ -87,7 +86,7 @@ HbA1c_score=as.factor(ifelse((HBA1PREB==1|HBA1PREB==2),0,ifelse((HBA1PREB==3|HBA
 str(dat20)
 ```
 
-```{r create obesity scores}
+```{r create obesity scores 0,1}
 # dat3 contains obesity scores that are manually created for 4 diseases
 # the higher score the more likely to be obesity
 
@@ -161,6 +160,649 @@ hist(dat7$dia_score) # the final score is highly unbalanced
 nrow(dat6[which(dat5$DIABBC==5),]) # the final score of 2790 observations are 0
 ```
 
+```{r SMOTE function from DWmR package}
+SMOTE <- function(form,data,
+                  perc.over=200,k=5,
+                  perc.under=200,
+                  learner=NULL,...
+                  )
+  
+  # INPUTS:
+  # form a model formula
+  # data the original training set (with the unbalanced distribution)
+  # minCl  the minority class label
+  # per.over/100 is the number of new cases (smoted cases) generated
+  #              for each rare case. If perc.over < 100 a single case
+  #              is generated uniquely for a randomly selected perc.over
+  #              of the rare cases
+  # k is the number of neighbours to consider as the pool from where
+  #   the new examples are generated
+  # perc.under/100 is the number of "normal" cases that are randomly
+  #                selected for each smoted case
+  # learner the learning system to use.
+  # ...  any learning parameters to pass to learner
+{
+
+  # the column where the target variable is
+  tgt <- which(names(data) == as.character(form[[2]]))
+  minCl <- levels(data[,tgt])[which.min(table(data[,tgt]))]
+  
+  # get the cases of the minority class
+  minExs <- which(data[,tgt] == minCl)
+
+  # generate synthetic cases from these minExs
+  if (tgt < ncol(data)) {
+      cols <- 1:ncol(data)
+      cols[c(tgt,ncol(data))] <- cols[c(ncol(data),tgt)]
+      data <-  data[,cols]
+  }
+  newExs <- smote.exs(data[minExs,],ncol(data),perc.over,k)
+  if (tgt < ncol(data)) {
+      newExs <- newExs[,cols]
+      data <- data[,cols]
+  }
+  
+  # get the undersample of the "majority class" examples
+  selMaj <- sample((1:NROW(data))[-minExs],
+                   as.integer((perc.under/100)*nrow(newExs)),
+                   replace=T)
+
+  # the final data set (the undersample+the rare cases+the smoted exs)
+  newdataset <- rbind(data[selMaj,],data[minExs,],newExs)
+
+  # learn a model if required
+  if (is.null(learner)) return(newdataset)
+  else do.call(learner,list(form,newdataset,...))
+}
+
+
+
+# ===================================================
+# Obtain a set of smoted examples for a set of rare cases.
+# L. Torgo, Feb 2010
+# ---------------------------------------------------
+smote.exs <- function(data,tgt,N,k)
+  # INPUTS:
+  # data are the rare cases (the minority "class" cases)
+  # tgt is the name of the target variable
+  # N is the percentage of over-sampling to carry out;
+  # and k is the number of nearest neighours to use for the generation
+  # OUTPUTS:
+  # The result of the function is a (N/100)*T set of generated
+  # examples with rare values on the target
+{
+  nomatr <- c()
+  T <- matrix(nrow=dim(data)[1],ncol=dim(data)[2]-1)
+  for(col in seq.int(dim(T)[2]))
+    if (class(data[,col]) %in% c('factor','character')) {
+      T[,col] <- as.integer(data[,col])
+      nomatr <- c(nomatr,col)
+    } else T[,col] <- data[,col]
+  
+  if (N < 100) { # only a percentage of the T cases will be SMOTEd
+    nT <- NROW(T)
+    idx <- sample(1:nT,as.integer((N/100)*nT))
+    T <- T[idx,]
+    N <- 100
+  }
+
+  p <- dim(T)[2]
+  nT <- dim(T)[1]
+
+  ranges <- apply(T,2,max)-apply(T,2,min)
+  
+  nexs <-  as.integer(N/100) # this is the number of artificial exs generated
+                                        # for each member of T
+  new <- matrix(nrow=nexs*nT,ncol=p)    # the new cases
+
+  for(i in 1:nT) {
+
+    # the k NNs of case T[i,]
+    xd <- scale(T,T[i,],ranges)
+    for(a in nomatr) xd[,a] <- xd[,a]==0
+    dd <- drop(xd^2 %*% rep(1, ncol(xd)))
+    kNNs <- order(dd)[2:(k+1)]
+
+    for(n in 1:nexs) {
+      # select randomly one of the k NNs
+      neig <- sample(1:k,1)
+
+      ex <- vector(length=ncol(T))
+
+      # the attribute values of the generated case
+      difs <- T[kNNs[neig],]-T[i,]
+      new[(i-1)*nexs+n,] <- T[i,]+runif(1)*difs
+      for(a in nomatr)
+        new[(i-1)*nexs+n,a] <- c(T[kNNs[neig],a],T[i,a])[1+round(runif(1),0)]
+
+    }
+  }
+  newCases <- data.frame(new)
+  for(a in nomatr)
+    newCases[,a] <- factor(newCases[,a],levels=1:nlevels(data[,a]),labels=levels(data[,a]))
+
+  newCases[,tgt] <- factor(rep(data[1,tgt],nrow(newCases)),levels=levels(data[,tgt]))
+  colnames(newCases) <- colnames(data)
+  newCases
+}
+```
+
+```{r smote balancing dat 3 to dat33 balancing}
+dat33<-dat3[,1:26] # do NOT include DIABBC and sores other than dia_score
+dat33$CVDMEDST<-droplevels(dat33$CVDMEDST)
+dat33<-na.omit(dat33)
+table(dat33$CVDMEDST)
+
+
+dat33.balanced <-smote(CVDMEDST~., dat33, perc.over=600, perc.under=2)
+
+table(dat33.balanced$CVDMEDST)
+
+
+dat33.balanced<-dat33.balanced %>% mutate(
+  cvd_score= ifelse(CVDMEDST==4,0,1),
+)
+
+dat33.balanced$cvd_score<-as.factor(dat33.balanced$cvd_score)
+
+
+# 
+# 
+# dat33.balanced<-dat33.balanced[,-4]
+# dat33.balanced
+# 
+# model<-lm(dia_score~., data=dat33.balanced)
+
+
+set.seed(2021)
+training.samples <- dat33.balanced$cvd_score %>% 
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat33.balanced[training.samples, ]
+test.data <- dat33.balanced[-training.samples, ]
+
+dat33.balanced
+
+#model<-nnet::multinom(dia_score~.-DIABBC, data=train.data)
+model<-nnet::multinom(cvd_score~.-CVDMEDST, data=train.data)
+predict_class<-predict(model,newdata=test.data)
+
+
+
+length(predict_class)
+length(test.data$DIABBC)
+
+summary(model)
+data.frame(predict_class)
+
+table(predict_class, test.data$cvd_score)
+
+mean(predict_class==test.data$cvd_score)
+
+
+
+
+
+training.samples <- dat33$CVDMEDST %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat33[training.samples, ]
+test.data <- dat33[-training.samples, ]
+
+model<-nnet::multinom(CVDMEDST~., data=train.data)
+
+
+predict_class<-predict(model, newdata=test.data)
+table(predict_class, test.data$CVDMEDST)
+
+
+
+mean(predict_class==test.data$CVDMEDST)
+
+# 
+# summary(cvd_model)
+
+dat44<-dat4[,1:18] # do NOT include DIABBC and sores other than dia_score
+dat44$HCHOLBC<-droplevels(dat44$HCHOLBC)
+dat44<-na.omit(dat44)
+table(dat44$HCHOLBC)
+
+
+dat44.balanced <-smote(HCHOLBC~., dat44, perc.over=600, perc.under=2)
+
+table(dat44.balanced$HCHOLBC)
+
+
+dat44.balanced<-dat44.balanced %>% mutate(
+  cho_score= ifelse(HCHOLBC==5, 0, 1),
+)
+
+dat44.balanced$cho_score<-as.factor(dat44.balanced$cho_score)
+
+
+# 
+# 
+# dat33.balanced<-dat33.balanced[,-4]
+# dat33.balanced
+# 
+# model<-lm(dia_score~., data=dat33.balanced)
+
+
+set.seed(2021)
+training.samples <- dat44.balanced$cho_score %>% 
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat44.balanced[training.samples, ]
+test.data <- dat44.balanced[-training.samples, ]
+
+dat44.balanced
+
+#model<-nnet::multinom(cho_score~.-HCHOLBC, data=train.data)
+model<-nnet::multinom(cho_score~.-HCHOLBC, data=train.data)
+predict_class<-predict(model,newdata=test.data)
+
+
+
+length(predict_class)
+length(test.data$HCHOLBC)
+
+summary(model)
+data.frame(predict_class)
+
+table(predict_class, test.data$cho_score)
+
+mean(predict_class==test.data$cho_score)
+
+
+
+
+
+training.samples <- dat44$HCHOLBC %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat44[training.samples, ]
+test.data <- dat44[-training.samples, ]
+
+model<-nnet::multinom(HCHOLBC~., data=train.data)
+
+
+predict_class<-predict(model, newdata=test.data)
+table(predict_class, test.data$HCHOLBC)
+
+
+
+mean(predict_class==test.data$HCHOLBC)
+
+# 
+# summary(cho_model)
+
+#sug_score
+dat55<-dat5[,1:18] # do NOT include DIABBC and sores other than dia_score
+dat55$HSUGBC<-droplevels(dat55$HSUGBC)
+dat55<-na.omit(dat55)
+table(dat55$HSUGBC)
+
+
+dat55.balanced <-smote(HSUGBC~., dat55, perc.over=600, perc.under=2)
+
+table(dat55.balanced$HSUGBC)
+
+
+dat55.balanced<-dat55.balanced %>% mutate(
+  sug_score= ifelse(HSUGBC==3, 0, 1),
+)
+
+dat55.balanced$sug_score<-as.factor(dat55.balanced$sug_score)
+
+set.seed(2021)
+training.samples <- dat55.balanced$sug_score %>% 
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat55.balanced[training.samples, ]
+test.data <- dat55.balanced[-training.samples, ]
+
+dat55.balanced
+
+#model<-nnet::multinom(sug_score~.-HSUGBC, data=train.data)
+model<-nnet::multinom(sug_score~.-HSUGBC, data=train.data)
+predict_class<-predict(model,newdata=test.data)
+
+
+
+length(predict_class)
+length(test.data$HSUGBC)
+
+summary(model)
+data.frame(predict_class)
+
+table(predict_class, test.data$sug_score)
+
+mean(predict_class==test.data$sug_score)
+
+
+
+
+
+training.samples <- dat55$HSUGBC %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat55[training.samples, ]
+test.data <- dat55[-training.samples, ]
+
+model<-nnet::multinom(HSUGBC~., data=train.data)
+
+
+predict_class<-predict(model, newdata=test.data)
+table(predict_class, test.data$HSUGBC)
+
+
+
+mean(predict_class==test.data$HSUGBC)
+
+# 
+# summary(model)
+```
+
+```{r smote balancing dat 4 to dat44 balancing}
+dat44<-dat4[,1:26] # do NOT include DIABBC and sores other than dia_score
+dat44$HCHOLBC<-droplevels(dat44$HCHOLBC)
+dat44<-na.omit(dat44)
+table(dat44$HCHOLBC)
+dat44.balanced <-smote(HCHOLBC~., dat44, perc.over=600, perc.under=2)
+table(dat44.balanced$HCHOLBC)
+dat44.balanced<-dat44.balanced %>% mutate(
+  cho_score= ifelse(HCHOLBC==5, 0, 1),
+)
+
+dat44.balanced$cho_score<-as.factor(dat44.balanced$cho_score)
+
+
+# 
+# 
+# dat33.balanced<-dat33.balanced[,-4]
+# dat33.balanced
+# 
+# model<-lm(dia_score~., data=dat33.balanced)
+
+
+set.seed(2021)
+training.samples <- dat44.balanced$cho_score %>% 
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat44.balanced[training.samples, ]
+test.data <- dat44.balanced[-training.samples, ]
+
+dat44.balanced
+
+#model<-nnet::multinom(cho_score~.-HCHOLBC, data=train.data)
+model<-nnet::multinom(cho_score~.-HCHOLBC, data=train.data)
+predict_class<-predict(model,newdata=test.data)
+
+
+
+length(predict_class)
+length(test.data$HCHOLBC)
+
+summary(model)
+data.frame(predict_class)
+
+table(predict_class, test.data$cho_score)
+
+mean(predict_class==test.data$cho_score)
+
+
+
+
+
+training.samples <- dat44$HCHOLBC %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat44[training.samples, ]
+test.data <- dat44[-training.samples, ]
+
+model<-nnet::multinom(HCHOLBC~., data=train.data)
+
+
+predict_class<-predict(model, newdata=test.data)
+table(predict_class, test.data$HCHOLBC)
+
+
+
+mean(predict_class==test.data$HCHOLBC)
+
+# 
+# summary(model)
+
+
+```
+
+```{r smote balancing dat 5 to dat55 balancing}
+dat55<-dat5[,1:26] # do NOT include DIABBC and sores other than dia_score
+dat44$HCHOLBC<-droplevels(dat44$HCHOLBC)
+dat44<-na.omit(dat44)
+table(dat44$HCHOLBC)
+dat44.balanced <-smote(HCHOLBC~., dat44, perc.over=600, perc.under=2)
+table(dat44.balanced$HCHOLBC)
+dat44.balanced<-dat44.balanced %>% mutate(
+  cho_score= ifelse(HCHOLBC==5, 0, 1),
+)
+
+dat44.balanced$cho_score<-as.factor(dat44.balanced$cho_score)
+
+
+# 
+# 
+# dat33.balanced<-dat33.balanced[,-4]
+# dat33.balanced
+# 
+# model<-lm(dia_score~., data=dat33.balanced)
+
+
+set.seed(2021)
+training.samples <- dat44.balanced$cho_score %>% 
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat44.balanced[training.samples, ]
+test.data <- dat44.balanced[-training.samples, ]
+
+dat44.balanced
+
+#model<-nnet::multinom(cho_score~.-HCHOLBC, data=train.data)
+model<-nnet::multinom(cho_score~.-HCHOLBC, data=train.data)
+predict_class<-predict(model,newdata=test.data)
+
+
+
+length(predict_class)
+length(test.data$HCHOLBC)
+
+summary(model)
+data.frame(predict_class)
+
+table(predict_class, test.data$cho_score)
+
+mean(predict_class==test.data$cho_score)
+
+
+
+
+
+training.samples <- dat44$HCHOLBC %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat44[training.samples, ]
+test.data <- dat44[-training.samples, ]
+
+model<-nnet::multinom(HCHOLBC~., data=train.data)
+
+
+predict_class<-predict(model, newdata=test.data)
+table(predict_class, test.data$HCHOLBC)
+
+
+
+mean(predict_class==test.data$HCHOLBC)
+
+# 
+# summary(model)
+
+```
+
+```{r smote balancing dat 6 to dat66 balancing}
+
+```
+
+```{r smote balancing dat 7 to dat77 balancing}
+
+```
+
+```{r PCA}
+
+```
+
+```{r logistic regression data33 balanced}
+#data33<-subset(dat33, select=-c(DIABBC,HCHOLBC, HSUGBC, HYPBC,CVDMEDST, cvd_score, sug_score, hyp_score, final_score)) 
+dat33<-na.omit(dat33)
+library(smbinning)
+# segregate continuous and factor variables
+factor_vars <- c ("LDL", "EDUCATION", "MARITALSTATUS", "OCCUPATION", "RELATIONSHIP", "RACE", "SEX", "NATIVECOUNTRY")
+continuous_vars <- c("AGE", "FNLWGT","EDUCATIONNUM", "HOURSPERWEEK", "CAPITALGAIN", "CAPITALLOSS")
+
+iv_df <- data.frame(VARS=c(factor_vars, continuous_vars), IV=numeric(14))  # init for IV results
+
+# compute IV for categoricals
+for(factor_var in factor_vars){
+  smb <- smbinning.factor(trainingData, y="ABOVE50K", x=factor_var)  # WOE table
+  if(class(smb) != "character"){ # heck if some error occured
+    iv_df[iv_df$VARS == factor_var, "IV"] <- smb$iv
+  }
+}
+
+# compute IV for continuous vars
+for(continuous_var in continuous_vars){
+  smb <- smbinning(trainingData, y="ABOVE50K", x=continuous_var)  # WOE table
+  if(class(smb) != "character"){  # any error while calculating scores.
+    iv_df[iv_df$VARS == continuous_var, "IV"] <- smb$iv
+  }
+}
+
+iv_df <- iv_df[order(-iv_df$IV), ]  # sort
+iv_df
+```
+
+```{r k-fold cross-valdation for logistic regression dat4}
+set.seed(2021)
+# Predict cho_score, drop other y and y-related variables
+dat4<-subset(dat4, select=-c(DIABBC,HCHOLBC, HSUGBC, HYPBC,CVDMEDST, cvd_score, sug_score, hyp_score, final_score)) 
+# str(dat4)
+# dat44<-dat4[dat4$dia_score>0,]
+# str(dat44)
+# remove NA values
+dat4<-na.omit(dat4)
+# set up k value for k-fold cross validation 
+k_fold=10
+# create k folds
+folds<-createFolds(y=dat4$cho_score, k=k_fold)
+# create a new vector to record test results
+test_error_RMSE<-c() 
+
+#table(dat44.balanced$HYPBC)
+
+# K-fold cross-validation:
+for (i in 1:10){
+  fold_test<-dat4[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-dat4[-folds[[i]],] # remaining is training set
+  # linear regression using AIC
+  M1<-lm(cho_score~., data=fold_train) # full model
+  M0<-lm(cho_score~1, data=fold_train) # null model
+  lm_model<-step(M1, scope=list(lower=M0, upper=M1),direction='backward', k=2) # backward selection from full model to null model
+  fold_predict<-predict(lm_model, type='response', newdata=fold_test) # predict y
+  test_error_RMSE[i] = RMSE(fold_predict, fold_test$cho_score) # calculate and record RMSE
+}
+
+summary(lm_model)
+#model<-lm(dia_score~., data=dat4)
+#summary(model)
+avg_RMSE<-sum(test_error_RMSE)/k_fold
+avg_RMSE
+
+#Predict sug_score
+set.seed(2021)
+# Predict sug_score, drop other y and y-related variables
+dat5<-subset(dat5, select=-c(DIABBC, HCHOLBC, HSUGBC, HYPBC,CVDMEDST, cho_score,dia_score,cvd_score, hyp_score, final_score)) 
+# str(dat5)
+# dat55<-dat5[dat5$sug_score>0,]
+# str(dat55)
+# remove NA values
+dat5<-na.omit(dat5)
+# set up k value for k-fold cross validation 
+k_fold=10
+# create k folds
+folds<-createFolds(y=dat5$sug_score, k=k_fold)
+# create a new vector to record test results
+test_error_RMSE<-c() 
+
+#table(dat55.balanced$HYPBC)
+
+# K-fold cross-validation:
+for (i in 1:k_fold){
+  fold_test<-dat5[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-dat5[-folds[[i]],] # remaining is training set
+  # linear regression using AIC
+  M1<-lm(sug_score~., data=fold_train) # full model
+  M0<-lm(sug_score~1, data=fold_train) # null model
+  lm_model<-step(M1, scope=list(lower=M0, upper=M1),direction='backward', k=2) # backward selection from full model to null model
+  fold_predict<-predict(lm_model, type='response', newdata=fold_test) # predict y
+  test_error_RMSE[i] = RMSE(fold_predict, fold_test$dia_score) # calculate and record RMSE
+}
+
+summary(lm_model)
+#model<-lm(dia_score~., data=dat4)
+#summary(model)
+avg_RMSE<-sum(test_error_RMSE)/k_fold
+avg_RMSE
+
+```
+
+```{r k-fold cross-validation for logistic regression dat5}
+# dat5 sug_score
+set.seed(2021)
+# Predict dia_score, drop other y and y-related variables
+#dat5<-subset(dat5, select=-c(DIABBC, HCHOLBC, HSUGBC, HYPBC, cho_score,CVDMEDST, hyp_score, final_score,cvd_score)) 
+# str(dat4)
+# dat44<-dat4[dat4$dia_score>0,]
+# str(dat44)
+# remove NA values
+#dat5<-na.omit(dat5)
+# set up k value for k-fold cross validation 
+k_fold=10
+# create k folds
+folds<-createFolds(y=dat5$sug_score, k=k_fold)
+# create a new vector to record test results
+test_error_RMSE<-c() 
+
+# K-fold cross-validation:
+for (i in 1:k_fold){
+  fold_test<-dat5[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-dat5[-folds[[i]],] # remaining is training set
+  # linear regression using AIC
+  M1<-lm(sug_score~., data=fold_train) # full model
+  M0<-lm(sug_score~1, data=fold_train) # null model
+  lm_model<-step(M1, scope=list(lower=M0, upper=M1),direction='backward', k=2) # backward selection from full model to null model
+  fold_predict<-predict(lm_model, type='response', newdata=fold_test) # predict y
+  test_error_RMSE[i] = RMSE(fold_predict, fold_test$sug_score) # calculate and record RMSE
+}
+
+summary(lm_model)
+#model<-lm(dia_score~., data=dat5)
+#summary(model)
+
+```
+
+```{r logistic regression dat33. balanced }
+null=glm(cvd_score~1,data=dat33.balanced,family=binomial)
+full=glm(cvd_score~.,data=dat33.balanced,family=binomial)
+n=nrow(dat33.balanced)
+#step
+#stepwise from full model using BIC
+stepBICfull<- step(full,k=log(n))
+#stepwise from full model using AIC
+stepAICfull<-step(full, k=2)
+#stepwise from null model using BIC
+stepBICnull<-step(nul,scope=list(lower=null, upper=full), k=log(n))
+#stepwise from null model using AIC
+stepAICnull<-step(null, scope=list(lower=null,upper=full),k=2)
+```
 
 ```{r smote-k-fold cross-valdation for linear regression }
 set.seed(2021)
@@ -234,87 +876,7 @@ summary(lm_model)
 
 ```
 
-```{r logistic model}
-
-```
-
-
-```{r smote balancing dat 33}
-dat33<-dat3[,1:26] # do NOT include DIABBC and sores other than dia_score
-dat33$CVDMEDST<-droplevels(dat33$CVDMEDST)
-dat33<-na.omit(dat33)
-table(dat33$CVDMEDST)
-
-
-dat33.balanced <-smote(CVDMEDST~., dat33, perc.over=600, perc.under=2)
-
-table(dat33.balanced$CVDMEDST)
-
-
-dat33.balanced<-dat33.balanced %>% mutate(
-  cvd_score= ifelse(CVDMEDST==4,0,1),
-)
-
-dat33.balanced$cvd_score<-as.factor(dat33.balanced$cvd_score)
-
-
-# 
-# 
-# dat33.balanced<-dat33.balanced[,-4]
-# dat33.balanced
-# 
-# model<-lm(dia_score~., data=dat33.balanced)
-
-
-set.seed(2021)
-training.samples <- dat33.balanced$cvd_score %>% 
-  createDataPartition(p = 0.8, list = FALSE)
-train.data  <- dat33.balanced[training.samples, ]
-test.data <- dat33.balanced[-training.samples, ]
-
-dat33.balanced
-
-#model<-nnet::multinom(dia_score~.-DIABBC, data=train.data)
-model<-nnet::multinom(cvd_score~.-CVDMEDST, data=train.data)
-predict_class<-predict(model,newdata=test.data)
-
-
-
-length(predict_class)
-length(test.data$DIABBC)
-
-summary(model)
-data.frame(predict_class)
-
-table(predict_class, test.data$cvd_score)
-
-mean(predict_class==test.data$cvd_score)
-
-
-
-
-
-training.samples <- dat33$CVDMEDST %>%
-  createDataPartition(p = 0.8, list = FALSE)
-train.data  <- dat33[training.samples, ]
-test.data <- dat33[-training.samples, ]
-
-model<-nnet::multinom(CVDMEDST~., data=train.data)
-
-
-predict_class<-predict(model, newdata=test.data)
-table(predict_class, test.data$CVDMEDST)
-
-
-
-mean(predict_class==test.data$CVDMEDST)
-
-# 
-# summary(cvd_model)
-
-```
-
-```{r k-fold cross-validation for linear regression }
+```{r k-fold cross-validation for linear regression dat 4 }
 set.seed(2021)
 # Predict dia_score, drop other y and y-related variables
 #dat4<-subset(dat4, select=-c(DIABBC, HCHOLBC, HSUGBC, HYPBC, cvd_score, sug_score,CVDMEDST, hyp_score, final_score)) 
@@ -383,21 +945,7 @@ avg_RMSE<-sum(test_error_RMSE)/k_fold
 avg_RMSE
 ```
 
-```{r logistic regression}
-null = glm(cvd_score~1,data=dat33.balanced,family=binomial("logit"),maxit = 100)
-full = glm(cvd_score~.,data=dat33.balanced,family=binomial("logit"),maxit = 100)
-n= nrow(dat33.balanced)
-# stepwise from full model using BIC
-stepBICfull <- step(full,k=log(n))
-# stepwise from full model using AIC 
-stepAICfull <- step(full,k=2)
-# stepwise from null model using BIC 
-stepBICnull <- step(null,scope=list(lower=null,upper=full),k=log(n))
-# stepwise from null model using AIC 
-stepAICnull <- step(null,scope=list(lower=null,upper=full),k=2)
-```
-
-```{r k-fold validation}
+```{r k-fold validation package}
 cv_penLogistic <- function(y,X,method=c("vanilla",
                                         "fowardAIC",
                                         "forwardBIC",
@@ -487,10 +1035,27 @@ cv_penLogistic <- function(y,X,method=c("vanilla",
 }
 ```
 
-```{r}
+```{r k-fold validation dat33 balanced}
 repeats <-100
 res1<-cv_penLogistic(CVD_score, Glu_score, method="ridge", repeats=repeats)
-res2<-cv_penLogistic(y, X, method="lasso", repeats=repeats)
+res2<-cv_penLogistic(CVD_score, X, method="lasso", repeats=repeats)
+
 ```
 
+```{r random forest dat33 balanced}
+library(caTools)
+set.seed(123)
+sample = sample.split(dat33.balanced$cvd_score, SplitRatio = .75)
+train = subset(dat33.balanced, sample == TRUE)
+test  = subset(dat33.balanced, sample == FALSE)
+dim(train)
+dim(test)
+dat33brf <- randomForest(
+  num ~ .,
+  data=train
+)
+  pred = predict(rf, newdata=test[-14])
+  cm = table(test[,14], pred)
+
+```
 
