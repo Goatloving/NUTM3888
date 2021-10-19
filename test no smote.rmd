@@ -1,0 +1,313 @@
+---
+title: "major_project_3"
+output: html_document
+---
+
+```{r library}
+library(tidyverse)
+#library(here)      # directory referencing
+#library(readxl)    # reading Excel files
+#library(janitor)   # data cleaning 
+#library(stringr)   # string manipulation
+library(tidyr)     # new tidy functions
+library(knitr) # kable
+#library(modi) # ok for multivariate outlier detection
+library(caret)# low variance filter
+# missing values
+#library(naniar)
+#library(knitr)
+#library(ggpubr) # ggplot arrangement
+#ploting 
+library(gridExtra)
+library(kableExtra)
+#outlier
+#library(univOutl)
+# tree methods
+#library(tourr)
+#library(RColorBrewer)
+#library(plotly)
+#library(htmltools)
+library(performanceEstimation)# for SMOTE
+library(rpart)
+library(rpart.plot)
+library(rattle) #fancyRpartPlot
+library(Rtsne)
+library(randomForest)
+library(neuralnet)
+library(e1071)# SVM regression
+library(mltools)
+library(data.table)
+library(skimr)
+library(smotefamily)
+library(broom)
+library(jtools)
+```
+
+
+```{r load data}
+load("tech_data.Rdata") # load cleaned data from John's code, make sure you have the Rdata file within the working directory
+```
+
+```{r dataset fliter}
+#dat<-tech_biom %>% filter (AGEC >= 19, AGEC<=64, SMKSTAT==5)  # filter age and smoke status
+dat<-tech_biom %>% filter (AGEC >= 19, AGEC<=64)  # filter age and smoke status
+var_list<-c("BMISC","SEX","AGEC","DIABBC","HCHOLBC","HSUGBC","HYPBC","PHDCMWBC","EXLWMBC","EXLWVBC",
+ "SYSTOL","DIASTOL","TRIGRESB","CHOLRESB","LDLRESB","HBA1PREB","GLUCFREB","HDLCHREB","CVDMEDST","APOBRESB") # add/remove variables that are interested
+
+dat2<-dat %>% select (var_list) # select columns that we are interested
+str(dat2) # 3488 obs x 13 variables
+
+skim(dat2$DIABBC)
+
+dat2
+dat2$EXLWMBC<-as.numeric(as.character(dat2$EXLWMBC))
+dat2$EXLWVBC<-as.numeric(as.character(dat2$EXLWVBC))
+
+dat2
+```
+
+```{r create factor scores}
+dat20<-dat2 %>% mutate(
+ Sys_score=ifelse(SYSTOL<120,0,ifelse(SYSTOL<130,1,ifelse(SYSTOL<140,2,ifelse(SYSTOL>=998,NA,3)))),
+ Dis_score=ifelse(DIASTOL<80,0,ifelse(DIASTOL<90,1,ifelse(DIASTOL<100,2,ifelse(DIASTOL>=998,NA,3)))),  
+Tri_score=as.factor(ifelse((TRIGRESB==1|TRIGRESB==2|TRIGRESB==3),0,ifelse((TRIGRESB==4|TRIGRESB==5),1,ifelse(TRIGRESB==97|TRIGRESB==98,NA,2)))),
+Chol_score=as.factor(ifelse((CHOLRESB==1|CHOLRESB==2|CHOLRESB==3),0,ifelse((CHOLRESB==4|CHOLRESB==5|CHOLRESB==6),1,ifelse(CHOLRESB==97|CHOLRESB==98,NA,2)))),
+#LDL_score=as.factor(ifelse((LDLRESB==1|LDLRESB==2|LDLRESB==3|LDLRESB==4),0,ifelse((LDLRESB==5|LDLRESB==6|LDLRESB==7),1,ifelse(LDLRESE==97|LDLRESE==98,NA,2)))),
+Glu_score=as.factor(ifelse((GLUCFREB==4|GLUCFREB==5),0,ifelse((GLUCFREB==6|GLUCFREB==7),1,ifelse(GLUCFREB==97|GLUCFREB==98,NA,2)))),
+HDL_score=as.factor(ifelse((HDLCHREB==7|HDLCHREB==8),NA,ifelse((HDLCHREB==5|HDLCHREB==6),0,ifelse(HDLCHREB==1,2,1)))),
+Waist_score=ifelse(SEX==1,ifelse(PHDCMWBC<102,0,ifelse(PHDCMWBC>=998,NA,1)),ifelse(PHDCMWBC<88,0,ifelse(PHDCMWBC>=998,NA,1))),
+MBC_score=ifelse(EXLWMBC<150,1,0),
+VBC_score=ifelse(EXLWVBC<75,1,0),
+ApoB_score=as.factor(ifelse((APOBRESB==1|APOBRESB==2|APOBRESB==3|APOBRESB==4),0,ifelse((APOBRESB==5),1,ifelse(APOBRESB==97|APOBRESB==98,NA,2)))),
+HbA1c_score=as.factor(ifelse((HBA1PREB==1|HBA1PREB==2),0,ifelse((HBA1PREB==3|HBA1PREB==4),1,ifelse(HBA1PREB==7|HBA1PREB==8,NA,2)))),
+
+)
+
+str(dat20)
+```
+
+```{r create obesity scores}
+# dat3 contains obesity scores that are manually created for 4 diseases
+# the higher score the more likely to be obesity
+
+dat3<-dat20 %>% mutate(
+  dia_score= ifelse(DIABBC==5, 0, ifelse(DIABBC==3, 1, ifelse(DIABBC==2, 2, ifelse(DIABBC==1, 3, NA)))),
+  cho_score= ifelse(HCHOLBC==5, 0, ifelse(HCHOLBC==3, 1, ifelse(HCHOLBC==2, 2, ifelse(HCHOLBC==1, 3, NA)))),
+  sug_score= ifelse(HSUGBC==5, 0, ifelse(HSUGBC==3, 1, ifelse(HSUGBC==2, 2, ifelse(HSUGBC==1, 3, NA)))),
+  hyp_score= ifelse(HYPBC==5, 0, ifelse(HYPBC==3, 1, ifelse(HYPBC==2, 2, ifelse(HYPBC==1, 3, NA)))),
+  cvd_score= ifelse((CVDMEDST==1|CVDMEDST==2|CVDMEDST==3),2,ifelse(CVDMEDST==4,1,NA)),
+  final_score = dia_score+cho_score+sug_score+hyp_score+cvd_score
+)
+
+hist(dat3$cvd_score) # the final score is highly unbalanced
+nrow(dat3[which(dat3$CVDMEDST==5),]) # the final score of 2790 observations are 0
+
+skim(dat3)
+
+dat4<-dat20 %>% mutate(
+  dia_score= ifelse(DIABBC==5, 0, ifelse(DIABBC==3, 1, ifelse(DIABBC==2, 2, ifelse(DIABBC==1, 3, NA)))),
+  cho_score= ifelse(HCHOLBC==5, 0, ifelse(HCHOLBC==3, 1, ifelse(HCHOLBC==2, 2, ifelse(HCHOLBC==1, 3, NA)))),
+  sug_score= ifelse(HSUGBC==5, 0, ifelse(HSUGBC==3, 1, ifelse(HSUGBC==2, 2, ifelse(HSUGBC==1, 3, NA)))),
+  hyp_score= ifelse(HYPBC==5, 0, ifelse(HYPBC==3, 1, ifelse(HYPBC==2, 2, ifelse(HYPBC==1, 3, NA)))),
+  cvd_score= ifelse((CVDMEDST==1|CVDMEDST==2|CVDMEDST==3),2,ifelse(CVDMEDST==4,1,NA)),
+  final_score = dia_score+cho_score+sug_score+hyp_score+cvd_score
+)
+
+hist(dat4$cho_score) # the final score is highly unbalanced
+nrow(dat4[which(dat4$HCHOLBC==5),]) # the final score of 2790 observations are 0
+
+skim(dat4)
+
+dat5<-dat20 %>% mutate(
+  dia_score= ifelse(DIABBC==5, 0, ifelse(DIABBC==3, 1, ifelse(DIABBC==2, 2, ifelse(DIABBC==1, 3, NA)))),
+  cho_score= ifelse(HCHOLBC==5, 0, ifelse(HCHOLBC==3, 1, ifelse(HCHOLBC==2, 2, ifelse(HCHOLBC==1, 3, NA)))),
+  sug_score= ifelse(HSUGBC==5, 0, ifelse(HSUGBC==3, 1, ifelse(HSUGBC==2, 2, ifelse(HSUGBC==1, 3, NA)))),
+  hyp_score= ifelse(HYPBC==5, 0, ifelse(HYPBC==3, 1, ifelse(HYPBC==2, 2, ifelse(HYPBC==1, 3, NA)))),
+  cvd_score= ifelse((CVDMEDST==1|CVDMEDST==2|CVDMEDST==3),2,ifelse(CVDMEDST==4,1,NA)),
+  final_score = dia_score+cho_score+sug_score+hyp_score+cvd_score
+)
+
+hist(dat5$sug_score) # the final score is highly unbalanced
+nrow(dat5[which(dat5$HSUGBC==5),]) # the final score of 2790 observations are 0
+
+skim(dat5)
+
+dat6<-dat20 %>% mutate(
+  dia_score= ifelse(DIABBC==5, 0, ifelse(DIABBC==3, 1, ifelse(DIABBC==2, 2, ifelse(DIABBC==1, 3, NA)))),
+  cho_score= ifelse(HCHOLBC==5, 0, ifelse(HCHOLBC==3, 1, ifelse(HCHOLBC==2, 2, ifelse(HCHOLBC==1, 3, NA)))),
+  sug_score= ifelse(HSUGBC==5, 0, ifelse(HSUGBC==3, 1, ifelse(HSUGBC==2, 2, ifelse(HSUGBC==1, 3, NA)))),
+  hyp_score= ifelse(HYPBC==5, 0, ifelse(HYPBC==3, 1, ifelse(HYPBC==2, 2, ifelse(HYPBC==1, 3, NA)))),
+  cvd_score= ifelse((CVDMEDST==1|CVDMEDST==2|CVDMEDST==3),2,ifelse(CVDMEDST==4,1,NA)),
+  final_score = dia_score+cho_score+sug_score+hyp_score+cvd_score
+)
+
+hist(dat6$hyp_score) # the final score is highly unbalanced
+nrow(dat6[which(dat5$HYPBC==5),]) # the final score of 2790 observations are 0
+
+skim(dat6)
+
+#dat7
+dat7<-dat20 %>% mutate(
+  dia_score= ifelse(DIABBC==5, 0, ifelse(DIABBC==3, 1, ifelse(DIABBC==2, 2, ifelse(DIABBC==1, 3, NA)))),
+  cho_score= ifelse(HCHOLBC==5, 0, ifelse(HCHOLBC==3, 1, ifelse(HCHOLBC==2, 2, ifelse(HCHOLBC==1, 3, NA)))),
+  sug_score= ifelse(HSUGBC==5, 0, ifelse(HSUGBC==3, 1, ifelse(HSUGBC==2, 2, ifelse(HSUGBC==1, 3, NA)))),
+  hyp_score= ifelse(HYPBC==5, 0, ifelse(HYPBC==3, 1, ifelse(HYPBC==2, 2, ifelse(HYPBC==1, 3, NA)))),
+  cvd_score= ifelse(CVDMEDST==3,3,ifelse(CVDMEDST==2,2,ifelse(CVDMEDST==3,1,ifelse(CVDMEDST==4,0,NA)))),
+  final_score = dia_score+cho_score+sug_score+hyp_score+cvd_score
+)
+
+hist(dat7$dia_score) # the final score is highly unbalanced
+nrow(dat6[which(dat5$DIABBC==5),]) # the final score of 2790 observations are 0
+
+```
+
+
+```{r smote-k-fold cross-valdation for linear regression }
+set.seed(2021)
+# Predict cho_score, drop other y and y-related variables
+dat4<-subset(dat4, select=-c(DIABBC,HCHOLBC, HSUGBC, HYPBC,CVDMEDST, cvd_score, sug_score, hyp_score, final_score)) 
+# str(dat4)
+# dat44<-dat4[dat4$dia_score>0,]
+# str(dat44)
+# remove NA values
+dat4<-na.omit(dat4)
+# set up k value for k-fold cross validation 
+k_fold=10
+# create k folds
+folds<-createFolds(y=dat4$cho_score, k=k_fold)
+# create a new vector to record test results
+test_error_RMSE<-c() 
+
+#table(dat44.balanced$HYPBC)
+
+# K-fold cross-validation:
+for (i in 1:k_fold){
+  fold_test<-dat4[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-dat4[-folds[[i]],] # remaining is training set
+  # linear regression using AIC
+  M1<-lm(cho_score~., data=fold_train) # full model
+  M0<-lm(cho_score~1, data=fold_train) # null model
+  lm_model<-step(M1, scope=list(lower=M0, upper=M1),direction='backward', k=2) # backward selection from full model to null model
+  fold_predict<-predict(lm_model, type='response', newdata=fold_test) # predict y
+  test_error_RMSE[i] = RMSE(fold_predict, fold_test$cho_score) # calculate and record RMSE
+}
+
+summary(lm_model)
+#model<-lm(dia_score~., data=dat4)
+#summary(model)
+avg_RMSE<-sum(test_error_RMSE)/k_fold
+avg_RMSE
+
+#Predict sug_score
+set.seed(2021)
+# Predict sug_score, drop other y and y-related variables
+dat5<-subset(dat5, select=-c(DIABBC, HCHOLBC, HSUGBC, HYPBC,CVDMEDST, cho_score,dia_score,cvd_score, hyp_score, final_score)) 
+# str(dat5)
+# dat55<-dat5[dat5$sug_score>0,]
+# str(dat55)
+# remove NA values
+dat5<-na.omit(dat5)
+# set up k value for k-fold cross validation 
+k_fold=10
+# create k folds
+folds<-createFolds(y=dat5$sug_score, k=k_fold)
+# create a new vector to record test results
+test_error_RMSE<-c() 
+
+#table(dat55.balanced$HYPBC)
+
+# K-fold cross-validation:
+for (i in 1:k_fold){
+  fold_test<-dat5[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-dat5[-folds[[i]],] # remaining is training set
+  # linear regression using AIC
+  M1<-lm(sug_score~., data=fold_train) # full model
+  M0<-lm(sug_score~1, data=fold_train) # null model
+  lm_model<-step(M1, scope=list(lower=M0, upper=M1),direction='backward', k=2) # backward selection from full model to null model
+  fold_predict<-predict(lm_model, type='response', newdata=fold_test) # predict y
+  test_error_RMSE[i] = RMSE(fold_predict, fold_test$dia_score) # calculate and record RMSE
+}
+
+summary(lm_model)
+#model<-lm(dia_score~., data=dat4)
+#summary(model)
+avg_RMSE<-sum(test_error_RMSE)/k_fold
+avg_RMSE
+
+```
+
+```{r k-fold cross-validation for linear regression }
+set.seed(2021)
+# Predict dia_score, drop other y and y-related variables
+#dat4<-subset(dat4, select=-c(DIABBC, HCHOLBC, HSUGBC, HYPBC, cvd_score, sug_score,CVDMEDST, hyp_score, final_score)) 
+# str(dat4)
+# dat44<-dat4[dat4$dia_score>0,]
+# str(dat44)
+# remove NA values
+dat4<-na.omit(dat4)
+# set up k value for k-fold cross validation 
+k_fold=10
+# create k folds
+folds<-createFolds(y=dat4$cho_score, k=k_fold)
+# create a new vector to record test results
+test_error_RMSE<-c() 
+
+# K-fold cross-validation:
+for (i in 1:k_fold){
+  fold_test<-dat4[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-dat4[-folds[[i]],] # remaining is training set
+  # linear regression using AIC
+  M1<-lm(cho_score~., data=fold_train) # full model
+  M0<-lm(cho_score~1, data=fold_train) # null model
+  lm_model<-step(M1, scope=list(lower=M0, upper=M1),direction='backward', k=2) # backward selection from full model to null model
+  fold_predict<-predict(lm_model, type='response', newdata=fold_test) # predict y
+  test_error_RMSE[i] = RMSE(fold_predict, fold_test$cho_score) # calculate and record RMSE
+}
+
+summary(lm_model)
+#model<-lm(dia_score~., data=dat4)
+#summary(model)
+avg_RMSE<-sum(test_error_RMSE)/k_fold
+avg_RMSE
+
+# dat5 sug_score
+set.seed(2021)
+# Predict dia_score, drop other y and y-related variables
+#dat5<-subset(dat5, select=-c(DIABBC, HCHOLBC, HSUGBC, HYPBC, cho_score,CVDMEDST, hyp_score, final_score,cvd_score)) 
+# str(dat4)
+# dat44<-dat4[dat4$dia_score>0,]
+# str(dat44)
+# remove NA values
+#dat5<-na.omit(dat5)
+# set up k value for k-fold cross validation 
+k_fold=10
+# create k folds
+folds<-createFolds(y=dat5$sug_score, k=k_fold)
+# create a new vector to record test results
+test_error_RMSE<-c() 
+
+# K-fold cross-validation:
+for (i in 1:k_fold){
+  fold_test<-dat5[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-dat5[-folds[[i]],] # remaining is training set
+  # linear regression using AIC
+  M1<-lm(sug_score~., data=fold_train) # full model
+  M0<-lm(sug_score~1, data=fold_train) # null model
+  lm_model<-step(M1, scope=list(lower=M0, upper=M1),direction='backward', k=2) # backward selection from full model to null model
+  fold_predict<-predict(lm_model, type='response', newdata=fold_test) # predict y
+  test_error_RMSE[i] = RMSE(fold_predict, fold_test$sug_score) # calculate and record RMSE
+}
+
+summary(lm_model)
+#model<-lm(dia_score~., data=dat5)
+#summary(model)
+avg_RMSE<-sum(test_error_RMSE)/k_fold
+avg_RMSE
+```
+
+
+
+```{r quadratic discriminant}
+
+```
+

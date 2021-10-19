@@ -3,7 +3,7 @@
     "path": "C:/Users/melod/Downloads/stat3888_project-main (new)/stat3888_project-main/major_project_3.rmd",
     "project_path": "major_project_3.rmd",
     "type": "r_markdown",
-    "hash": "4171976004",
+    "hash": "340191890",
     "contents": "",
     "dirty": false,
     "created": 1634252822463.0,
@@ -12,15 +12,15 @@
     "properties": {
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "74,10",
-        "scrollLine": "61"
+        "cursorPosition": "43,3",
+        "scrollLine": "13"
     },
-    "folds": "139|39|264|0|\n",
-    "lastKnownWriteTime": 1634409347,
+    "folds": "46|16|48|0|\n150|39|275|0|\n",
+    "lastKnownWriteTime": 1634501456,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1634409347177,
+    "last_content_update": 1634512947885,
     "read_only": false,
     "read_only_alternatives": []
 }
