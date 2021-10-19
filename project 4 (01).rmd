@@ -238,7 +238,79 @@ summary(lm_model)
 
 ```
 
-```{r linear model}
+
+```{r smote balancing dat 33}
+dat33<-dat3[,1:26] # do NOT include DIABBC and sores other than dia_score
+dat33$CVDMEDST<-droplevels(dat33$CVDMEDST)
+dat33<-na.omit(dat33)
+table(dat33$CVDMEDST)
+
+
+dat33.balanced <-smote(CVDMEDST~., dat33, perc.over=600, perc.under=2)
+
+table(dat33.balanced$CVDMEDST)
+
+
+dat33.balanced<-dat33.balanced %>% mutate(
+  cvd_score= ifelse(CVDMEDST==4,0,1),
+)
+
+dat33.balanced$cvd_score<-as.factor(dat33.balanced$cvd_score)
+
+
+# 
+# 
+# dat33.balanced<-dat33.balanced[,-4]
+# dat33.balanced
+# 
+# model<-lm(dia_score~., data=dat33.balanced)
+
+
+set.seed(2021)
+training.samples <- dat33.balanced$cvd_score %>% 
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat33.balanced[training.samples, ]
+test.data <- dat33.balanced[-training.samples, ]
+
+dat33.balanced
+
+#model<-nnet::multinom(dia_score~.-DIABBC, data=train.data)
+model<-nnet::multinom(cvd_score~.-CVDMEDST, data=train.data)
+predict_class<-predict(model,newdata=test.data)
+
+
+
+length(predict_class)
+length(test.data$DIABBC)
+
+summary(model)
+data.frame(predict_class)
+
+table(predict_class, test.data$cvd_score)
+
+mean(predict_class==test.data$cvd_score)
+
+
+
+
+
+training.samples <- dat33$CVDMEDST %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat33[training.samples, ]
+test.data <- dat33[-training.samples, ]
+
+model<-nnet::multinom(CVDMEDST~., data=train.data)
+
+
+predict_class<-predict(model, newdata=test.data)
+table(predict_class, test.data$CVDMEDST)
+
+
+
+mean(predict_class==test.data$CVDMEDST)
+
+# 
+# summary(cvd_model)
 
 ```
 
