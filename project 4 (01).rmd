@@ -570,17 +570,16 @@ mean(predict_class==test.data$HCHOLBC)
 
 ```{r smote balancing dat 5 to dat55 balancing}
 dat55<-dat5[,1:26] # do NOT include DIABBC and sores other than dia_score
-dat44$HCHOLBC<-droplevels(dat44$HCHOLBC)
-dat44<-na.omit(dat44)
-table(dat44$HCHOLBC)
-dat44.balanced <-smote(HCHOLBC~., dat44, perc.over=600, perc.under=2)
-table(dat44.balanced$HCHOLBC)
-dat44.balanced<-dat44.balanced %>% mutate(
-  cho_score= ifelse(HCHOLBC==5, 0, 1),
+dat55$HSUGBC<-droplevels(dat55$HSUGBC)
+dat55<-na.omit(dat55)
+table(dat55$HSUGBC)
+dat55.balanced <-smote(HSUGBC~., dat55, perc.over=600, perc.under=2)
+table(dat55.balanced$HSUGBC)
+dat55.balanced<-dat55.balanced %>% mutate(
+  hyp_score= ifelse(HSUGBC==5, 0, 1),
 )
 
-dat44.balanced$cho_score<-as.factor(dat44.balanced$cho_score)
-
+dat55.balanced$hyp_score<-as.factor(dat55.balanced$sug_score)
 
 # 
 # 
@@ -591,47 +590,47 @@ dat44.balanced$cho_score<-as.factor(dat44.balanced$cho_score)
 
 
 set.seed(2021)
-training.samples <- dat44.balanced$cho_score %>% 
+training.samples <- dat55.balanced$sug_score %>% 
   createDataPartition(p = 0.8, list = FALSE)
-train.data  <- dat44.balanced[training.samples, ]
-test.data <- dat44.balanced[-training.samples, ]
+train.data  <- dat55.balanced[training.samples, ]
+test.data <- dat55.balanced[-training.samples, ]
 
-dat44.balanced
+dat55.balanced
 
 #model<-nnet::multinom(cho_score~.-HCHOLBC, data=train.data)
-model<-nnet::multinom(cho_score~.-HCHOLBC, data=train.data)
+model<-nnet::multinom(sug_score~.-HSUGBC, data=train.data)
 predict_class<-predict(model,newdata=test.data)
 
 
 
 length(predict_class)
-length(test.data$HCHOLBC)
+length(test.data$HSUGBC)
 
 summary(model)
 data.frame(predict_class)
 
-table(predict_class, test.data$cho_score)
+table(predict_class, test.data$sug_score)
 
-mean(predict_class==test.data$cho_score)
-
-
+mean(predict_class==test.data$sug_score)
 
 
 
-training.samples <- dat44$HCHOLBC %>%
+
+
+training.samples <- dat55$HYPBC %>%
   createDataPartition(p = 0.8, list = FALSE)
-train.data  <- dat44[training.samples, ]
-test.data <- dat44[-training.samples, ]
+train.data  <- dat55[training.samples, ]
+test.data <- dat55[-training.samples, ]
 
-model<-nnet::multinom(HCHOLBC~., data=train.data)
+model<-nnet::multinom(HSUGBC~., data=train.data)
 
 
 predict_class<-predict(model, newdata=test.data)
-table(predict_class, test.data$HCHOLBC)
+table(predict_class, test.data$HSUGBC)
 
 
 
-mean(predict_class==test.data$HCHOLBC)
+mean(predict_class==test.data$HSUGBC)
 
 # 
 # summary(model)
@@ -639,6 +638,71 @@ mean(predict_class==test.data$HCHOLBC)
 ```
 
 ```{r smote balancing dat 6 to dat66 balancing}
+dat66<-dat5[,1:26] # do NOT include DIABBC and sores other than dia_score
+dat66$HYPBC<-droplevels(dat55$HSUGBC)
+dat66<-na.omit(dat66)
+table(dat66$HSUGBC)
+dat55.balanced <-smote(HSUGBC~., dat55, perc.over=600, perc.under=2)
+table(dat55.balanced$HSUGBC)
+dat55.balanced<-dat55.balanced %>% mutate(
+  hyp_score= ifelse(HSUGBC==5, 0, 1),
+)
+
+dat66.balanced$hyp_score<-as.factor(dat66.balanced$hyp_score)
+
+# 
+# 
+# dat33.balanced<-dat33.balanced[,-4]
+# dat33.balanced
+# 
+# model<-lm(dia_score~., data=dat33.balanced)
+
+
+set.seed(2021)
+training.samples <- dat66.balanced$hyp_score %>% 
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat66.balanced[training.samples, ]
+test.data <- dat66.balanced[-training.samples, ]
+
+dat66.balanced
+
+#model<-nnet::multinom(cho_score~.-HCHOLBC, data=train.data)
+model<-nnet::multinom(hyp_score~.-HYPBC, data=train.data)
+predict_class<-predict(model,newdata=test.data)
+
+
+
+length(predict_class)
+length(test.data$HYPBC)
+
+summary(model)
+data.frame(predict_class)
+
+table(predict_class, test.data$hyp_score)
+
+mean(predict_class==test.data$hyp_score)
+
+
+
+
+
+training.samples <- dat44$HYPBC %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat44[training.samples, ]
+test.data <- dat44[-training.samples, ]
+
+model<-nnet::multinom(HYPBC~., data=train.data)
+
+
+predict_class<-predict(model, newdata=test.data)
+table(predict_class, test.data$HYPBC)
+
+
+
+mean(predict_class==test.data$HYPBC)
+
+# 
+# summary(model)
 
 ```
 
