@@ -360,141 +360,6 @@ mean(predict_class==test.data$CVDMEDST)
 # 
 # summary(cvd_model)
 
-dat44<-dat4[,1:18] # do NOT include DIABBC and sores other than dia_score
-dat44$HCHOLBC<-droplevels(dat44$HCHOLBC)
-dat44<-na.omit(dat44)
-table(dat44$HCHOLBC)
-
-
-dat44.balanced <-smote(HCHOLBC~., dat44, perc.over=600, perc.under=2)
-
-table(dat44.balanced$HCHOLBC)
-
-
-dat44.balanced<-dat44.balanced %>% mutate(
-  cho_score= ifelse(HCHOLBC==5, 0, 1),
-)
-
-dat44.balanced$cho_score<-as.factor(dat44.balanced$cho_score)
-
-
-# 
-# 
-# dat33.balanced<-dat33.balanced[,-4]
-# dat33.balanced
-# 
-# model<-lm(dia_score~., data=dat33.balanced)
-
-
-set.seed(2021)
-training.samples <- dat44.balanced$cho_score %>% 
-  createDataPartition(p = 0.8, list = FALSE)
-train.data  <- dat44.balanced[training.samples, ]
-test.data <- dat44.balanced[-training.samples, ]
-
-dat44.balanced
-
-#model<-nnet::multinom(cho_score~.-HCHOLBC, data=train.data)
-model<-nnet::multinom(cho_score~.-HCHOLBC, data=train.data)
-predict_class<-predict(model,newdata=test.data)
-
-
-
-length(predict_class)
-length(test.data$HCHOLBC)
-
-summary(model)
-data.frame(predict_class)
-
-table(predict_class, test.data$cho_score)
-
-mean(predict_class==test.data$cho_score)
-
-
-
-
-
-training.samples <- dat44$HCHOLBC %>%
-  createDataPartition(p = 0.8, list = FALSE)
-train.data  <- dat44[training.samples, ]
-test.data <- dat44[-training.samples, ]
-
-model<-nnet::multinom(HCHOLBC~., data=train.data)
-
-
-predict_class<-predict(model, newdata=test.data)
-table(predict_class, test.data$HCHOLBC)
-
-
-
-mean(predict_class==test.data$HCHOLBC)
-
-# 
-# summary(cho_model)
-
-#sug_score
-dat55<-dat5[,1:18] # do NOT include DIABBC and sores other than dia_score
-dat55$HSUGBC<-droplevels(dat55$HSUGBC)
-dat55<-na.omit(dat55)
-table(dat55$HSUGBC)
-
-
-dat55.balanced <-smote(HSUGBC~., dat55, perc.over=600, perc.under=2)
-
-table(dat55.balanced$HSUGBC)
-
-
-dat55.balanced<-dat55.balanced %>% mutate(
-  sug_score= ifelse(HSUGBC==3, 0, 1),
-)
-
-dat55.balanced$sug_score<-as.factor(dat55.balanced$sug_score)
-
-set.seed(2021)
-training.samples <- dat55.balanced$sug_score %>% 
-  createDataPartition(p = 0.8, list = FALSE)
-train.data  <- dat55.balanced[training.samples, ]
-test.data <- dat55.balanced[-training.samples, ]
-
-dat55.balanced
-
-#model<-nnet::multinom(sug_score~.-HSUGBC, data=train.data)
-model<-nnet::multinom(sug_score~.-HSUGBC, data=train.data)
-predict_class<-predict(model,newdata=test.data)
-
-
-
-length(predict_class)
-length(test.data$HSUGBC)
-
-summary(model)
-data.frame(predict_class)
-
-table(predict_class, test.data$sug_score)
-
-mean(predict_class==test.data$sug_score)
-
-
-
-
-
-training.samples <- dat55$HSUGBC %>%
-  createDataPartition(p = 0.8, list = FALSE)
-train.data  <- dat55[training.samples, ]
-test.data <- dat55[-training.samples, ]
-
-model<-nnet::multinom(HSUGBC~., data=train.data)
-
-
-predict_class<-predict(model, newdata=test.data)
-table(predict_class, test.data$HSUGBC)
-
-
-
-mean(predict_class==test.data$HSUGBC)
-
-# 
-# summary(model)
 ```
 
 ```{r smote balancing dat 4 to dat44 balancing}
@@ -768,9 +633,54 @@ mean(predict_class==test.data$DIABBC)
 # summary(model)
 ```
 
-```{r PCA}
+```{r PCA dat33.balanced}
+na_count <-sapply(dat33.balanced, function(y) sum(is.na(y)))
+na_percent <- data.frame(na_count)/nrow(dat33.balanced)
+training_remove_sparse_records<-dat33.balanced[,na_percent<0.95]
+
+str(training_remove_sparse_records[,1:1])
+
+training_clean<-training_remove_sparse_records[,-c(1:1)]
+dim(training_clean)
+
+training_explore<-training_clean
+training_explore$cvd_score<-as.numeric(training_explore$cvd_score)
+cor_matrix<-abs(cor(training_explore))
+diag(cor_matrix)<-0
+library(corrplot)
+corrplot(cor_matrix, method="square")
+
+prComp<-prcomp(training_clean[,-54],scale. = TRUE)
+std_dev <- prComp$sdev
+pr_var <- std_dev^2
+prop_varex <- pr_var/sum(pr_var)
+sum(prop_varex[1:30])
+
+plot(cumsum(prop_varex), xlab = "Principal Component",ylab = "Cumulative Proportion of Variance Explained",type = "b")
+abline(h=0.975,col='red',v=12)
+
+train.data<-data.frame(classe = training_clean$OBELV, prComp$x)
+train.data <- train.data[,1:12]
+metric <- "Accuracy"
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+mtry <- sqrt(ncol(train.data))
+tunegrid <- expand.grid(.mtry=mtry)
+library(doMC)
+
+registerDoMC(cores = 4)
+model_rf <- train(classe~.,data=train.data, method="rf",  tuneGrid=tunegrid, trControl=control)
+
+print(model_rf)
+
+prediction_rf<-predict(model_rf, newdata =train.data)
+confusionMatrix(prediction_rf,train.data$classe)
 
 ```
+
+```{rPCA dat44.balanced}
+
+```
+
 
 ```{r logistic regression data33 balanced}
 #data33<-subset(dat33, select=-c(DIABBC,HCHOLBC, HSUGBC, HYPBC,CVDMEDST, cvd_score, sug_score, hyp_score, final_score)) 
