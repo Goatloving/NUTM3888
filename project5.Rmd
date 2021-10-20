@@ -243,10 +243,15 @@ res5 <- cv_penLogistic(y,xx,method="stepwiseBIC", repeats=repeats)
 res6 <- cv_penLogistic(y,xx,method="ridge", repeats=repeats)
 res7 <- cv_penLogistic(y,xx,method="lasso", repeats=repeats)
 res8 <-cv_penLogistic(y,xx,method="firth",repeats=repeats)
+
+save(res1,res2,res3,res4,res5,res6,res7,res8, file="logistic model Y1~X1.Rdata")
 ```
 
 ```{r exhbit models and cv performance}
-# compare error of above models 
+# compare error of above models
+
+load("logistic model Y1~X1.Rdata")
+
 tab <- cbind(
   apply(res1[[1]],2,mean),
   apply(res2[[1]],2,mean),
