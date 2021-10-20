@@ -72,7 +72,7 @@ str(dat2) # 7238 obs x 20 variables
 
 ### Y1 
 
-Y1 is binary and contains only 2 classes: if never had diaease, score = 0, else score = 1
+Y1 is binary and contains only 2 classes: if never had disease, score = 0, else score = 1
 
 ```{r}
 Y1<-dat2 %>% mutate(
@@ -87,6 +87,30 @@ Y1<-dat2 %>% mutate(
 ```
 
 ## Encode X:
+
+### X2
+```{r X2}
+# Do not use magic number, 0,1,2,3 should be changed to meaningful levels later
+X2<-dat2 %>% mutate(
+  Tri_score=as.factor(ifelse((TRIGRESB==1|TRIGRESB==2|TRIGRESB==3),0,ifelse((TRIGRESB==4|TRIGRESB==5),1,ifelse(TRIGRESB==97|TRIGRESB==98,NA,2)))),
+  
+  Chol_score=as.factor(ifelse((CHOLRESB==1|CHOLRESB==2|CHOLRESB==3),0,ifelse((CHOLRESB==4|CHOLRESB==5|CHOLRESB==6),1,ifelse(CHOLRESB==97|CHOLRESB==98,NA,2)))),
+  
+  LDL_score=as.factor(ifelse((LDLRESB==1|LDLRESB==2|LDLRESB==3|LDLRESB==4),0,ifelse((LDLRESB==5|LDLRESB==6|LDLRESB==7),1,ifelse(LDLRESB==97|LDLRESB==98,NA,2)))),
+  
+  Glu_score=as.factor(ifelse((GLUCFREB==4|GLUCFREB==5),0,ifelse((GLUCFREB==6|GLUCFREB==7),1,ifelse(GLUCFREB==97|GLUCFREB==98,NA,2)))),
+  
+  HDL_score=as.factor(ifelse((HDLCHREB==7|HDLCHREB==8),NA,ifelse((HDLCHREB==5|HDLCHREB==6),0,ifelse(HDLCHREB==1,2,1)))),
+  
+  
+  ApoB_score=as.factor(ifelse((APOBRESB==1|APOBRESB==2|APOBRESB==3|APOBRESB==4),0,ifelse((APOBRESB==5),1,ifelse(APOBRESB==97|APOBRESB==98,NA,2)))),
+  
+  HbA1c_score=as.factor(ifelse((HBA1PREB==1|HBA1PREB==2),0,ifelse((HBA1PREB==3|HBA1PREB==4),1,ifelse(HBA1PREB==7|HBA1PREB==8,NA,2)))),
+
+) %>% select (SYSTOL, DIASTOL,Tri_score, Chol_score, LDL_score, Glu_score, HDL_score, PHDCMWBC, EXLWMBC, EXLWVBC, ApoB_score, HbA1c_score)
+
+str(X2)
+```
 
 ### X1
 
@@ -128,14 +152,97 @@ str(X1)
 
 # Data analysis
 
-## Logistic regression
+## Model2 Y1$sug_score~X2
 
-### Model Y1$cvd_score~X1
+```{r}
+
+temp_dat<-data.frame(cbind(Y1$sug_score, X2))
+temp_dat<-na.omit(temp_dat)
+y<-temp_dat$Y1.sug_score
+#x<-one_hot(as.data.table(temp_dat[, -1])) # first colume is y and the rest will be X
+x<-temp_dat[,-1]
+```
+### Logistic regression
+
 ```{r Y1$cvd_score~X1 logsitic regression}
+options(warn =-1) # do not show warning
+# use one-hot encoding
+#xx<-one_hot(as.data.table(temp_dat[, -1]))
+xx<-x
+# model selection (step/CV) + CV test results
+repeats <- 1
+res1 <- cv_penLogistic(y,xx,method="vanilla", repeats=repeats)
+res2 <- cv_penLogistic(y,xx,method="fowardAIC", repeats=repeats)
+res3 <- cv_penLogistic(y,xx,method="forwardBIC", repeats=repeats)
+res4 <- cv_penLogistic(y,xx,method="stepwiseAIC", repeats=repeats)
+res5 <- cv_penLogistic(y,xx,method="stepwiseBIC", repeats=repeats)
+res6 <- cv_penLogistic(y,xx,method="ridge", repeats=repeats)
+res7 <- cv_penLogistic(y,xx,method="lasso", repeats=repeats)
+res8 <-cv_penLogistic(y,xx,method="firth",repeats=repeats)
+
+save(res1,res2,res3,res4,res5,res6,res7,res8, file="logistic model2 Y1_sug~X2.Rdata")
+```
+
+```{r exhbit models and cv performance}
+# compare error of above models
+
+load("logistic model2 Y1_sug~X2.Rdata")
+
+tab <- cbind(
+  apply(res1[[1]],2,mean),
+  apply(res2[[1]],2,mean),
+  apply(res3[[1]],2,mean),
+  apply(res4[[1]],2,mean),
+  apply(res5[[1]],2,mean),
+  apply(res6[[1]],2,mean),
+  apply(res7[[1]],2,mean),
+  apply(res8[[1]],2,mean))
+
+colnames(tab) <- c("logistic",
+                   "fwdAIC",
+                   "fwdBIC",
+                   "bwdAIC",
+                   "bwdBIC",
+                   "ridge",
+                   "lasso",
+                   "firth")
+
+boxplot(tab)
+datasummary_skim(data=data.frame(100*tab), fmt = "%.2f")
+
+# extract coefficients of models
+lcoef <- list(res1[[2]]$coef,
+              res2[[2]]$coef,
+              res3[[2]]$coef,
+              res4[[2]]$coef,
+              res5[[2]]$coef,
+              drop(coef(res6[[2]], res6[[2]]$lambda.1se )),
+              drop(coef(res7[[2]], res7[[2]]$lambda.1se )),
+              res8[[2]]$coef
+)
+
+varnames <- unique(unlist(map(lcoef,names)))
+tab = matrix(0, nrow = length(lcoef), ncol = length(varnames))
+colnames(tab) = varnames
+for (i in 1:length(lcoef)) 
+  tab[i, names(lcoef[[i]])] = lcoef[[i]]
+
+rownames(tab) <- paste("model",1:length(lcoef),sep="")
+logistic_coef_table<-kable(t(tab))
+logistic_coef_table
+
+# model 6 ridge shows best result
+drop(coef(res6[[2]], res6[[2]]$lambda.1se))
+
+```
+
+
+
+## Model1 Y1$cvd_score~X1
+
+```{r data }
 # remove NA and extract y and x
 options(warn =-1) # do not show warning
-
-
 temp_dat<-data.frame(cbind(Y1$cvd_score, X1))
 temp_dat<-na.omit(temp_dat)
 
@@ -143,9 +250,15 @@ temp_dat<-na.omit(temp_dat)
 y<-temp_dat$Y1.cvd_score
 #x<-one_hot(as.data.table(temp_dat[, -1])) # first colume is y and the rest will be X
 x<-temp_dat[,-1]
+```
 
+
+
+### Logistic regression
+
+```{r Y1$cvd_score~X1 logsitic regression}
+# use one-hot encoding
 xx<-one_hot(as.data.table(temp_dat[, -1]))
-
 # model selection (step/CV) + CV test results
 repeats <- 10
 res1 <- cv_penLogistic(y,xx,method="vanilla", repeats=repeats)
@@ -157,13 +270,18 @@ res6 <- cv_penLogistic(y,xx,method="ridge", repeats=repeats)
 res7 <- cv_penLogistic(y,xx,method="lasso", repeats=repeats)
 res8 <-cv_penLogistic(y,xx,method="firth",repeats=repeats)
 
-save(res1,res2,res3,res4,res5,res6,res7,res8, file="logistic model Y1~X1.Rdata")
+save(res1,res2,res3,res4,res5,res6,res7,res8, file="logistic model Y1_cvd~X1.Rdata")
 ```
 
 ```{r exhbit models and cv performance}
 # compare error of above models
 
-load("logistic model Y1~X1.Rdata")
+table(Y1$cho_score)
+table(Y1$hyp_score)
+table(Y1$sug_score)
+table(Y1$dia_score)
+
+load("logistic model Y1_cvd~X1.Rdata")
 
 tab <- cbind(
   apply(res1[[1]],2,mean),
@@ -214,6 +332,12 @@ drop(coef(res6[[2]], res6[[2]]$lambda.1se))
 ```
 
 Above plot shows the model "ridge" exhibits the lowest cross-validation test error.
+
+### Random Forest
+
+```{r}
+
+```
 
 
 
