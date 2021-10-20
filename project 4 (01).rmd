@@ -579,7 +579,7 @@ dat55.balanced<-dat55.balanced %>% mutate(
   hyp_score= ifelse(HSUGBC==5, 0, 1),
 )
 
-dat55.balanced$hyp_score<-as.factor(dat55.balanced$sug_score)
+dat55.balanced$sug_score<-as.factor(dat55.balanced$sug_score)
 
 # 
 # 
@@ -639,12 +639,12 @@ mean(predict_class==test.data$HSUGBC)
 
 ```{r smote balancing dat 6 to dat66 balancing}
 dat66<-dat5[,1:26] # do NOT include DIABBC and sores other than dia_score
-dat66$HYPBC<-droplevels(dat55$HSUGBC)
+dat66$HYPBC<-droplevels(dat66$HSUGBC)
 dat66<-na.omit(dat66)
 table(dat66$HSUGBC)
-dat55.balanced <-smote(HSUGBC~., dat55, perc.over=600, perc.under=2)
-table(dat55.balanced$HSUGBC)
-dat55.balanced<-dat55.balanced %>% mutate(
+dat66.balanced <-smote(HSUGBC~., dat66, perc.over=600, perc.under=2)
+table(dat66.balanced$HSUGBC)
+dat66.balanced<-dat66.balanced %>% mutate(
   hyp_score= ifelse(HSUGBC==5, 0, 1),
 )
 
@@ -688,8 +688,8 @@ mean(predict_class==test.data$hyp_score)
 
 training.samples <- dat44$HYPBC %>%
   createDataPartition(p = 0.8, list = FALSE)
-train.data  <- dat44[training.samples, ]
-test.data <- dat44[-training.samples, ]
+train.data  <- dat66[training.samples, ]
+test.data <- dat66[-training.samples, ]
 
 model<-nnet::multinom(HYPBC~., data=train.data)
 
@@ -707,7 +707,65 @@ mean(predict_class==test.data$HYPBC)
 ```
 
 ```{r smote balancing dat 7 to dat77 balancing}
+dat77<-dat5[,1:26] # do NOT include DIABBC and sores other than dia_score
+dat55$HSUGBC<-droplevels(dat77$DIABBC)
+dat55<-na.omit(dat77)
+table(dat77$DIABBC)
+dat77.balanced <-smote(DIABBC~., dat77, perc.over=600, perc.under=2)
+table(dat77.balanced$DIABBC)
+dat77.balanced<-dat77.balanced %>% mutate(
+  hyp_score= ifelse(DIABBC==5, 0, 1),
+)
 
+dat77.balanced$sug_score<-as.factor(dat55.balanced$dia_score)
+
+
+
+set.seed(2021)
+training.samples <- dat77.balanced$dia_score %>% 
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat77.balanced[training.samples, ]
+test.data <- dat77.balanced[-training.samples, ]
+
+dat77.balanced
+
+#model<-nnet::multinom(cho_score~.-HCHOLBC, data=train.data)
+model<-nnet::multinom(sug_score~.-DIABBC, data=train.data)
+predict_class<-predict(model,newdata=test.data)
+
+
+
+length(predict_class)
+length(test.data$DIABBC)
+
+summary(model)
+data.frame(predict_class)
+
+table(predict_class, test.data$dia_score)
+
+mean(predict_class==test.data$dia_score)
+
+
+
+
+
+training.samples <- dat55$HYPBC %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- dat55[training.samples, ]
+test.data <- dat55[-training.samples, ]
+
+model<-nnet::multinom(HSUGBC~., data=train.data)
+
+
+predict_class<-predict(model, newdata=test.data)
+table(predict_class, test.data$DIABBC)
+
+
+
+mean(predict_class==test.data$DIABBC)
+
+# 
+# summary(model)
 ```
 
 ```{r PCA}
