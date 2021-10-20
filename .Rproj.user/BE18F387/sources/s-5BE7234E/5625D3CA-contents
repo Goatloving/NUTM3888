@@ -1,0 +1,119 @@
+---
+title: "major_project_2"
+output: html_document
+---
+
+
+```{r library}
+library(corrplot)
+library(doMC)
+library(e1071)
+library(rpart)
+library(DMwR2)
+```
+
+
+```{r}
+training <- read.csv('Training model.csv', na.strings=c('#DIV/0', '', 'NA'))
+
+dim(training)
+
+na_count <-sapply(training, function(y) sum(is.na(y)))
+na_percent <- data.frame(na_count)/nrow(training)
+training_remove_sparse_records<-training[,na_percent<0.95]
+
+str(training_remove_sparse_records[,1:1])
+
+training_clean<-training_remove_sparse_records[,-c(1:1)]
+dim(training_clean)
+
+training_explore<-training_clean
+training_explore$OBELV<-as.numeric(training_explore$OBELV)
+cor_matrix<-abs(cor(training_explore))
+diag(cor_matrix)<-0
+
+corrplot(cor_matrix, method="square")
+
+training_clean<-training_clean %>% mutate(
+  obs_level = ifelse(OBELV == 'A' , 1, 
+                     ifelse(OBELV=='B', 2, 
+                            ifelse(OBELV=='C',3,
+                                   ifelse(OBELV=='D', 4, 
+                                          ifelse(OBELV=='E', 5, 
+                                                 ifelse(OBELV=='F', 6, 
+                                                        ifelse(OBELV=='G', 7,0)
+                                                               
+                                                        )
+                                                 )
+                                          )
+                                   )
+                            )
+                     )
+)
+
+prComp<-prcomp(training_clean[,-24],scale. = TRUE)
+std_dev <- prComp$sdev
+pr_var <- std_dev^2
+prop_varex <- pr_var/sum(pr_var)
+sum(prop_varex[1:30])
+
+plot(cumsum(prop_varex), xlab = "Principal Component",ylab = "Cumulative Proportion of Variance Explained",type = "b")
+abline(h=0.975,col='red',v=12)
+
+data_pca<-data.frame(obs_level = training_clean$obs_level, prComp$x)
+data_pca_12<-data_pca[,1:24]
+
+data_pca_12$obs_level=as.factor(data_pca_12$obs_level)
+
+new_data = SMOTE(obs_level~., perc.over=200, k=5, perc.under=200)
+```
+
+```{r}
+rf<-randomForest(obs_level ~ ., data=data_pca_12, ntree=500)
+plot(rf)
+rf
+```
+
+```{r}
+rf<-randomForest(obs_level~., data=train.data)
+print(rf)
+
+print(importance(rf, type=2))
+
+```
+```{r}
+data.use<-data.frame(classe = training_clean$OBELV, prComp$x)
+data_use
+
+train.data <- data_use[1:80,1:12]
+train.data
+metric <- "Accuracy"
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+mtry <- sqrt(ncol(train.data))
+tunegrid <- expand.grid(.mtry=mtry)
+
+
+
+
+registerDoMC(cores = 4)
+model_rf <- train(classe~.,data=train.data, method="rf",  tuneGrid=tunegrid, trControl=control)
+
+print(model_rf)
+
+
+
+
+data.test = data_use[81:100,1:12]
+data.test
+
+
+prediction_rf<-predict(model_rf, newdata = data_use[81:100,2:12])
+prediction_rf
+
+
+data.test$classe<-as.factor(data.test$classe)
+data.test
+
+confusionMatrix(prediction_rf,data.test$classe)
+```
+
