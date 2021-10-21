@@ -1,1 +1,0 @@
-{"frames":[{"func":"createFolds(y = dat4$cho_score, k = k_fold)","file":"","line_number":0,"end_line_number":0,"character_number":0,"end_character_number":0}],"message":"Error in names(out) <- paste(\"Fold\", gsub(\" \", \"0\", format(seq(along = out))),  : \n  'names' attribute [1] must be the same length as the vector [0]\n"}
