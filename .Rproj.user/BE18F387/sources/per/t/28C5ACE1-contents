@@ -1,0 +1,969 @@
+---
+title: "All Methods Code Snippets"
+author: "John T. Ormerod"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+header-includes:
+  - \usepackage{dcolumn}
+output:
+  html_document:
+    code_folding: hide
+    highlight: tango
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options(warn=-1) 
+
+library <- function(...) {
+  suppressPackageStartupMessages(base::library(...))
+}
+
+# For data wrangling
+library(tidyverse)
+library(here)
+library(readxl)
+library(janitor)
+
+# For nice model summaries
+library(summarytools)
+library(stargazer)
+
+# For nice tables
+library(knitr)
+library(kableExtra)
+
+# For interactively sortable tables
+library(DT)
+
+# For classification trees
+library(rpart)
+library(rpart.plot)
+library(rattle)
+
+# For LDA and QDA
+library(MASS)
+
+# For LASSO
+library(glmnet)
+
+# For Random forests
+library(randomForest)
+
+# For SVMs
+library(e1071)
+
+# For visualization
+library(ggplot2)
+library(scales)
+library(gridExtra)
+
+# For visualizing logistic regression 
+library(jtools)
+
+# Set the seed for reproducible results
+set.seed(1)
+
+# Only use 3 decimal places for the output
+options(digits=3)
+
+# These pieces of code detect how the document will
+# will be compiled that tells how kable and stargazer
+# to render talbes.
+if (is_html_output("markdown")) { 
+  kableFormat <- "markdown"; 
+  stargazerType <- "text";
+}
+
+if (is_html_output()) { 
+  kableFormat <- "html"; 
+  stargazerType <- "html";
+}
+
+if (is_latex_output()) { 
+  kableFormat <- "latex"; 
+  stargazerType <- "latex";
+}
+```
+
+### Data cleaning
+
+Load data cleaning packages.
+
+```{r, eval=TRUE}
+library(tidyverse)
+library(janitor)
+```
+
+Read in the data.
+
+```{r}
+tib <- read.csv(here::here("data","breast-cancer-wisconsin.data"), header=FALSE)
+
+colnames(tib) <- c("id number",
+                   "Clump Thickness",
+                   "Uniformity of Cell Size",
+                   "Uniformity of Cell Shape",
+                   "Marginal Adhesion",
+                   "Single Epithelial Cell Size",
+                   "Bare Nuclei",
+                   "Bland Chromatin",
+                   "Normal Nucleoli",
+                   "Mitoses",
+                   "Class")                       
+```
+
+
+Clean the column names.
+
+```{r}
+tib <- tib %>% clean_names()
+tib$bare_nuclei <- as.numeric(tib$bare_nuclei)
+tib <- tib %>% na.omit()
+```
+
+
+Extract the target and predictors.
+
+```{r}
+y <- factor(as.numeric(tib$class==2)) # 2=benign, 4=malignant
+X <- tib %>% dplyr::select(-class,-id_number)
+```
+
+Store the data dimensions for later reference.
+
+```{r}
+n <- length(y)
+p <- ncol(X)
+```
+
+### Exploratory data analysis
+
+
+Load EDA packages
+
+```{r}
+library(summarytools)
+```
+
+Render a table of summary statistics.
+
+```{r, results='asis', warning=FALSE, message=FALSE}
+print(dfSummary(X, 
+                style = 'grid', 
+                type = 'html',
+                plain.ascii = FALSE, 
+                graph.magnif = 0.85), 
+      method = 'render')
+```
+
+ 
+
+### Transformation
+
+Put everything into a data.frame with values `y` for the class
+variable, and `X` for the covariates.
+
+```{r}
+# 
+df <- data.frame(y=y,X=X)
+colnames(df) <- c("y",colnames(X))
+```
+
+Create a version of the data where all continuous variables
+are standardized and put the result in a data.frame called 
+`df_std`.
+
+```{r}
+mystd <- function(x) {
+  x <- (x-mean(x, na.rm=TRUE))/sd(x, na.rm=TRUE)
+}
+
+X_std <- X %>%
+  mutate_if(is.numeric, list(mystd))
+df_std <- data.frame(y=y,X=X_std)
+colnames(df_std) <- c("y",colnames(X_std))
+```
+
+Create a version of the data where only continuous
+values are kept (because some methods only handle continuous
+variables) and put the result in a `data.frame` called 
+`df_num`. 
+
+```{r}
+X_num <- X_std %>%
+  select_if(is.numeric)
+df_num <- data.frame(y=y,X=data.matrix(X_num))
+colnames(df_num) <- c("y",colnames(X_num))
+```
+
+Create a data frame where both the response and predictors are numeric
+```{r}
+X_both <- X_std %>%
+  select_if(is.numeric)
+df_both <- data.frame(y=as.numeric(y),X=data.matrix(X_both))
+colnames(df_both) <- c("y",colnames(X_both))
+```
+
+### Logistic regression
+
+Build a logistic regression classifier.
+
+```{r, results="asis"}
+res_glm1 <- glm(y~.,data=df,family=binomial)
+```
+
+# Building classifiers
+
+### Classification trees
+
+Load the relevant packages for classification trees.
+
+```{r}
+library(rpart)
+```
+
+Fit a classification tree using gini loss.
+
+```{r}
+res_ct1 <- rpart(y~., 
+                data=df,
+                parms=list(split="gini"))
+```
+
+Fit a classification tree using information loss.
+
+```{r}
+res_ct2 <- rpart(y~., 
+                data=df,
+                parms=list(split="information"))
+```
+
+
+### Linear discriminant analysis
+
+Load the relevant packages for linear discriminant analysis classifiers.
+
+```{r}
+library(MASS)
+```
+
+Build a linear discriminant analysis classifier.
+
+```{r, cache=TRUE}
+res_lda <- lda(y ~., df_num)
+```
+
+### K nearest neighbour
+
+Load the relevant packages for k-nearest neighbour classifiers.
+
+```{r}
+library(class)
+```
+
+Specify the number of folds (`nfolds`), a vector containing
+the index indicating which fold each sample belongs to (`fold`),
+and specify the values of `k` to use
+
+```{r, cache=TRUE}
+V <- 10 # Number of folds
+k_vals <- seq(1,31, by=2)
+```
+
+Use 10-fold cross-validation to determine the best value of $k$.
+
+```{r, cache=TRUE}
+cv_knn <- function(df,df_valid,V,k_vals) {
+  n <- nrow(df)
+  sets <- sample(rep(1:V,times=n)[1:n],n)
+  errors <- matrix(NA,V,length(k_vals))
+  for (j in 1:length(k_vals)) {
+    for (i in 1:V) {
+      test_inds  <- which(sets==i)
+      train_inds <- which(sets!=i)
+      df_test  <- df[test_inds,]
+      df_train <- df[train_inds,]
+      y_hat <- knn(train = df_train[,-1], 
+                   test  = df_test[,-1], 
+                   cl=df_train$y, 
+                   k=k_vals[j])
+      errors[i,j] <- sum(y_hat!=df_test$y)
+    }
+  }
+  
+  errs <- 100*apply(errors,2,sum)/n
+  best <- which.min(errs)
+  e_best <- errs[best]
+
+  y_hat <- knn(train = df[,-1], 
+               test = df_valid[,-1], 
+               cl=df$y, 
+               k=k_vals[best])
+  
+  return(list(errs=errs,y_hat=y_hat))
+}
+
+res_knn <- cv_knn(df_num,df_num,V,k_vals)
+```
+
+Calculate the error percentage and plot the percentage
+of errors against each value of $k$.
+
+```{r}
+df_plot <- data.frame(x=k_vals,y=res_knn$errs)
+g <- ggplot(df_plot,aes(x=x,y=y)) +
+  geom_line(size=2) +
+  theme_bw() +
+  xlab("k") +
+  ylab("Percentage of Classification errors")
+g
+```
+
+Print out the best value of $k$ and the corresponding best
+cross-validation error percentage.
+
+```{r}
+best <- which.min(res_knn$errs)
+e_best <- res_knn$errs[best]
+cat("best value of k is",k_vals[best],"\n")
+cat("best error is",round(res_knn$errs[best],2),"\n")
+```
+
+### Quadratric discriminant analysis
+
+Load the relevant packages for quadratic discriminant analysis classifiers.
+
+```{r}
+library(MASS)
+```
+
+Build a quadratic discriminant analysis classifier.
+
+```{r, cache=TRUE}
+res_qda <- qda(y ~., df_num)
+```
+
+### Random forests
+
+Load the relevant packages for random forests.
+
+```{r}
+library(randomForest)
+```
+
+Fit a random forest with 500 trees with 5 variables sampled for each tree.
+
+```{r, cache=TRUE}
+res_rf <- randomForest(y~., 
+                       data=df, 
+                       importance=TRUE, 
+                       proximity=TRUE,
+                       ntree=500,
+                       mtry=5)
+```
+
+
+### Neural networks
+
+```{r}
+library(neuralnet)
+```
+
+Note that I gave up on neural nets for this project because it was too slow.
+
+```{r, cache=TRUE, eval=FALSE}
+y_num <- as.numeric(y==1)
+res_nn <- neuralnet(y_num~., data=df_both, hidden=3)
+pred <- predict(res_nn, df_both)
+res_nn$pred <- pred[,1] < 0.5
+table(df_num$y, res_nn$pred)
+```
+
+
+### Support vector machines
+
+Load SVM library.
+
+```{r}
+library(e1071)
+```
+
+Fit each of the mainSVM types using a single value of the turning
+parameter (ideally cross-validation should be used to determine these).
+
+```{r, cache=TRUE}
+C_val <- 1
+coef0 <- 1
+gamma <- 1/p
+degree <- 3
+```
+
+
+Fit using linear SVM.
+
+```{r, cache=TRUE}
+res_svm1 <- svm(y~.,data=df_num,cost=C_val,kernel="linear")
+pred <- predict(res_svm1, df_num)
+res_svm1$pred <- pred
+table(df_num$y, res_svm1$pred)
+```
+
+Fit using radial SVM.
+
+```{r, cache=TRUE}
+res_svm2 <- svm(y~.,data=df_num,cost=C_val,kernel="radial",gamma=gamma)
+pred <- predict(res_svm2, df_num)
+res_svm2$pred <- pred 
+table(df_num$y, res_svm2$pred)
+```
+
+
+Fit using polynomial SVM.
+
+```{r, cache=TRUE}
+res_svm3 <- svm(y~.,data=df_num,cost=C_val,kernel="polynomial", gamma=gamma, coef0=coef0, degree=degree)
+pred <- predict(res_svm3, df_num)
+res_svm3$pred <- pred 
+table(df_num$y, res_svm3$pred)
+```
+ 
+# Variable selection
+
+### Stepwise logistic regression
+
+Use stepwise logistic regression to select relevant varaibles.
+
+```{r,  echo=TRUE, results='hide', warning=FALSE, cache=TRUE}
+# Warning: This chuck of code takes 5-10 mins to run
+null = glm(y~1,data=df,family=binomial)
+full = glm(y~.,data=df,family=binomial)
+
+# stepwise from full model using BIC
+stepBICfull <- step(full,k=log(n),trace=0)
+
+# stepwise from full model using AIC 
+stepAICfull <- step(full,k=2,trace=0)
+
+# stepwise from null model using BIC 
+stepBICnull <- step(null,scope=list(lower=null,upper=full),k=log(n),trace=0)
+
+# stepwise from null model using AIC 
+stepAICnull <- step(null,scope=list(lower=null,upper=full),k=2,trace=0)
+```
+
+### Penalized logistic regression with LASSO penalty
+
+
+Load the relevant packages for fitting penalised logistic regression.
+
+```{r}
+library(glmnet)
+```
+
+Fit a lasso logistic regression using 10 fold cross-validation to 
+select the tuning parameter ($\lambda$).
+
+```{r, cache=TRUE}
+# Convert the data.frame into a matrix
+X_mat <- data.matrix(df_std[,-1])
+
+# Fit the model
+cv_lasso <- cv.glmnet(X_mat, df_std$y, alpha = 1, family = "binomial")
+
+# Extract the fitted coefficients
+coef_lasso1 <- drop(coef(cv_lasso, cv_lasso$lambda.min))
+coef_lasso2 <- drop(coef(cv_lasso, cv_lasso$lambda.1se))
+```
+
+# Interpretation
+
+Calculate summaries of the fitted classification classification
+trees to extract variable importance (hide the output).
+
+```{r, results='hide'}
+sum_ct1 <- summary(res_ct1)
+sum_ct2 <- summary(res_ct2)
+```
+
+Load the DT package to create sortable tables in HTML.
+
+```{r}
+library(DT)
+```
+
+Put all of the variable importance measures in one list.
+
+```{r}
+lvi <- list(sum_ct1$variable.importance,
+            sum_ct2$variable.importance,
+            res_rf$importance[,3],
+            res_rf$importance[,4])
+```
+
+Create a common table of all of the variable importance measures
+
+```{r}
+varnames <- unique(unlist(map(lvi,names)))
+tab = matrix(0, nrow = length(lvi), ncol = length(varnames))
+colnames(tab) = varnames
+for (i in 1:length(lvi)) 
+  tab[i, names(lvi[[i]])] = lvi[[i]]
+
+rownames(tab) <- c("rpart gini importance", 
+                   "rpart information importance", 
+                   "RF accuracy importance",
+                   "RF gini importance")
+tab <- t(tab)
+tab <- round(tab,3)
+```
+
+Create a sortable HTML table.
+
+```{r}
+DT::datatable(tab)
+```
+
+Create a table with all of the fitted logistic regression models
+
+```{r, results="asis"}
+# Use the stargazer package to summarise the results
+stargazer(res_glm1, stepBICfull, stepAICfull, stepBICnull, stepAICfull,
+          type="html",
+          title="Regression Results", 
+          align=TRUE, dep.var.labels=c(""), 
+          omit.stat=c("LL","ser","f"), 
+          no.space=TRUE)
+```
+
+```{r}
+library(jtools)
+```
+
+```{r}
+plot_summs(res_glm1, stepBICfull, stepAICfull, stepBICnull, stepAICfull, 
+           scale = TRUE, plot.distributions = TRUE)
+```
+
+
+
+```{r}
+lcoef <- list(res_glm1$coef, 
+              stepBICfull$coef, 
+              stepAICfull$coef, 
+              stepBICnull$coef, 
+              stepAICfull$coef,
+              coef_lasso1,
+              coef_lasso2)
+```
+
+```{r}
+varnames2 <- unique(unlist(map(lcoef,names)))
+tab2 = matrix(0, nrow = length(lcoef), ncol = length(varnames2))
+colnames(tab2) = varnames2
+for (i in 1:length(lcoef)) 
+  tab2[i, names(lcoef[[i]])] = lcoef[[i]]
+
+rownames(tab2) <- c("glm", 
+                   "glm stepwise BIC full", 
+                   "glm stepwise AIC full", 
+                   "glm stepwise BIC null", 
+                   "glm stepwise AIC null", 
+                   "LASSO 1",
+                   "LASSO 2")
+tab2 <- t(tab2)
+tab2 <- round(tab2,3)
+```
+
+
+```{r}
+DT::datatable(tab2)
+```
+
+# Model Assessment
+
+
+```{r, message=FALSE, warning=FALSE, results="hide"}
+set.seed(2021)
+resultFileName <- "DoneCV.Rdata"
+if (!file.exists(resultFileName)) {
+  
+  V <- 10 # Number of folds
+  R <- 5  # Number of repeats 
+  
+  # Error matrices  
+  err_mat_lr           <- matrix(0,n,R)
+  err_mat_lr_full_aic  <- matrix(0,n,R)
+  err_mat_lr_null_aic  <- matrix(0,n,R)
+  err_mat_lr_full_bic  <- matrix(0,n,R)
+  err_mat_lr_null_bic  <- matrix(0,n,R)
+  err_mat_lr_lasso1    <- matrix(0,n,R)
+  err_mat_lr_lasso2    <- matrix(0,n,R)
+  
+  err_mat_knn <- matrix(0,n,R)
+  err_mat_lda <- matrix(0,n,R)
+  err_mat_qda <- matrix(0,n,R)
+  
+  err_mat_rpart_gini <- matrix(0,n,R)
+  err_mat_rpart_info <- matrix(0,n,R)
+  err_mat_randforest <- matrix(0,n,R)
+  
+  err_mat_svm1 <- matrix(0,n,R)
+  err_mat_svm2 <- matrix(0,n,R)
+  err_mat_svm3 <- matrix(0,n,R)
+  
+  err_mat_nn <- matrix(0,n,R)
+  
+  # Time matrices  
+  time_mat_lr           <- matrix(0,V,R)
+  time_mat_lr_full_aic  <- matrix(0,V,R)
+  time_mat_lr_null_aic  <- matrix(0,V,R)
+  time_mat_lr_full_bic  <- matrix(0,V,R)
+  time_mat_lr_null_bic  <- matrix(0,V,R)
+  time_mat_lr_lasso1    <- matrix(0,V,R)
+  time_mat_lr_lasso2    <- matrix(0,V,R)
+  
+  time_mat_lda <- matrix(0,V,R)
+  time_mat_qda <- matrix(0,V,R)
+  time_mat_knn <- matrix(0,V,R)
+  
+  time_mat_rpart_gini <- matrix(0,V,R)
+  time_mat_rpart_info <- matrix(0,V,R)
+  time_mat_randforest <- matrix(0,V,R)
+  
+  time_mat_svm1 <- matrix(0,V,R)
+  time_mat_svm2 <- matrix(0,V,R)
+  time_mat_svm3 <- matrix(0,V,R)
+  
+  time_mat_nn <- matrix(0,V,R)
+  
+  for (ITER in 1:R) {
+    
+    sets <- sample(rep(1:V,n)[1:n],n)
+    
+    for (JTER in 1:V) {
+      test_set  <- which(sets==JTER)
+      train_set <- which(sets!=JTER)
+      
+      cat(ITER,JTER,"\n")
+      
+      ##############################################################
+      
+      # Logistic regression
+      
+      t1 <- system.time({
+        res_glm1_train <- glm(y~.,
+                            data=df[train_set,],
+                            family=binomial)
+        y_hat <- round(predict(res_glm1_train,
+                               newdata = df[test_set,], 
+                               type = "response"))
+        err_mat_lr[test_set,ITER] <- as.numeric(y_hat!=df[test_set,]$y)
+      })[3]
+      
+      
+      time_mat_lr[JTER,ITER] <- t1
+      
+      ##############################################################
+      
+      # Classification trees gini
+      
+      t2 <- system.time({
+        res_ct1_train <- rpart(y~., 
+                              data=df[train_set,],
+                              parms=list(split="gini"))
+        
+        y_hat <- predict(res_ct1_train,
+                               newdata = df[test_set,], 
+                               type = "class")
+        err_mat_rpart_gini[test_set,ITER] <- as.numeric(y_hat!=df[test_set,]$y)
+      })[3]
+      #cat(ITER,JTER,"rpart gini",t2,"\n")
+      
+      time_mat_rpart_gini[JTER,ITER] <- t2
+      
+      ##############################################################
+      
+      # Classification trees information
+      
+      t3 <- system.time({
+        res_ct2_train <- rpart(y~., 
+                    data=df[train_set,],
+                    parms=list(split="information"))
+        
+        y_hat <- predict(res_ct2_train,
+                               newdata = df[test_set,], 
+                               type = "class")
+        err_mat_rpart_info[test_set,ITER] <- as.numeric(y_hat!=df[test_set,]$y)
+      })[3]
+      #cat(ITER,JTER,"rpart info",t3,"\n")
+      
+      time_mat_rpart_info[JTER,ITER] <- t3
+      
+      ##############################################################
+      
+      # K nearest neighbours
+      
+      t4 <- system.time({
+        res_knn_train <- cv_knn(df_num[train_set,],df_num[test_set,],10,k_vals)
+        err_mat_knn[test_set,ITER] <- as.numeric(res_knn_train$y_hat!=df[test_set,]$y)
+      })[3]
+      #cat(ITER,JTER,"cv_knn",t4,"\n")
+      
+      time_mat_knn[JTER,ITER] <- t4
+      
+      ##############################################################
+      
+      # LDA
+   
+      t5 <- system.time({
+        res_lda_train <- lda(y ~., df_num[train_set,])
+        y_hat <- predict(res_lda_train,
+                                 newdata = df_num[test_set,])$class
+        err_mat_lda[test_set,ITER] <- as.numeric(y_hat!=df_num[test_set,]$y)
+      })[3]
+      #cat(ITER,JTER,"cv_lda",t5,"\n")
+      
+      time_mat_lda[JTER,ITER] <- t5
+   
+      ##############################################################
+      
+      # QDA
+      
+      t6 <- system.time({
+        res_qda_train <- qda(y ~., df_num[train_set,])
+        y_hat <- predict(res_qda_train,
+                                 newdata = df_num[test_set,], 
+                                 type = "class")$class
+        err_mat_qda[test_set,ITER] <- as.numeric(y_hat!=df_num[test_set,]$y)
+      })[3]
+      #cat(ITER,JTER,"cv_qda",t6,"\n")
+      
+      time_mat_qda[JTER,ITER] <- t6
+      
+      ##############################################################
+      
+      # Random forests
+      
+      t7 <- system.time({
+        res_rf_train <- randomForest(y~., 
+                           data=df[train_set,], 
+                           importance=FALSE,  # Turn off - faster
+                           proximity=FALSE,   # Turn off - faster
+                           ntree=500,
+                           mtry=5)
+        y_hat <- predict(res_rf_train,
+                                   newdata = df[test_set,], 
+                                   type = "class")
+        err_mat_randforest[test_set,ITER] <- as.numeric(y_hat!=df[test_set,]$y)
+      })[3]
+      #cat(ITER,JTER,"random forests",t7,"\n")
+      
+      time_mat_randforest[JTER,ITER] <- t7
+      
+      ##############################################################
+      
+      # SVM linear
+      
+      t8 <- system.time({
+        res_svm1_train <- svm(y~.,
+                        data=df_num[train_set,],
+                        cost=C_val,
+                        kernel="linear")
+        y_hat <- predict(res_svm1_train, df_num[test_set,])
+        err_mat_svm1[test_set,ITER] <- as.numeric(y_hat!=df[test_set,]$y)
+      })[3]
+      #cat(ITER,JTER,"svm linear",t8,"\n")
+      
+      time_mat_svm1[JTER,ITER] <- t8
+      
+      ##############################################################
+      
+      # SVM radial
+      
+      t9 <- system.time({
+        res_svm2_train <- svm(y~.,
+                        data=df_num[train_set,],
+                        cost=C_val,
+                        kernel="radial",
+                        gamma=gamma)
+        
+        y_hat <- predict(res_svm2_train, df_num[test_set,])
+        err_mat_svm2[test_set,ITER] <- as.numeric(y_hat!=df[test_set,]$y)
+      })[3]
+      #cat(ITER,JTER,"svm radial",t9,"\n")
+      
+      time_mat_svm2[JTER,ITER] <- t9
+      
+      ##############################################################
+      
+      # SVM polynomial
+      
+      t10 <- system.time({
+        res_svm3_train <- svm(y~.,
+                        data=df_num[train_set,],
+                        cost=C_val,
+                        kernel="polynomial", 
+                        gamma=gamma, 
+                        coef0=coef0, 
+                        degree=degree)
+        
+        y_hat <- predict(res_svm3_train, df_num[test_set,])
+        err_mat_svm3[test_set,ITER] <- as.numeric(y_hat!=df[test_set,]$y)
+      })[3]
+      #cat(ITER,JTER,"svm polynomial",t10,"\n")
+      
+      time_mat_svm3[JTER,ITER] <- t10
+  
+      ##############################################################
+      
+      # Warning: This chuck of code takes 5-10 mins to run
+      null = glm(y~1,data=df[train_set,],family=binomial)
+      full = glm(y~.,data=df[train_set,],family=binomial)
+      
+      ##############################################################
+      
+      t11 <- system.time({
+        # stepwise from full model using BIC
+        stepBICfull_train <- step(full,k=log(n),trace=0)
+        
+        y_hat <- round(predict(stepBICfull_train,
+                               newdata = df[test_set,], 
+                               type = "response"))
+        err_mat_lr_full_bic[test_set,ITER] <- as.numeric(y_hat!=df[test_set,]$y)
+      })[3]
+      #cat(ITER,JTER,"lr full bic",t11,"\n")
+      
+      time_mat_lr_full_bic[JTER,ITER] <- t11
+      
+      ##############################################################
+      
+      t12 <- system.time({
+        # stepwise from full model using AIC 
+        stepAICfull_train <- step(full,k=2,trace=0)
+        
+        y_hat <- round(predict(stepAICfull_train,
+                               newdata = df[test_set,], 
+                               type = "response"))
+        err_mat_lr_full_aic[test_set,ITER] <- as.numeric(y_hat!=df[test_set,]$y)
+      })[3]
+      #cat(ITER,JTER,"lr full aic",t12,"\n")
+  
+      time_mat_lr_full_aic[JTER,ITER] <- t12
+      
+      ##############################################################
+      
+      t13 <- system.time({
+        # stepwise from null model using BIC 
+        stepBICnull_train <- step(null,scope=list(lower=null,upper=full),k=log(n),trace=0)
+        
+        y_hat <- round(predict(stepBICnull_train,
+                               newdata = df[test_set,], 
+                               type = "response"))
+        err_mat_lr_null_bic[test_set,ITER] <- as.numeric(y_hat!=df[test_set,]$y)
+      })[3]
+      #cat(ITER,JTER,"lr null bic",t13,"\n")
+      
+      time_mat_lr_null_bic[JTER,ITER] <- t13
+      
+      ##############################################################
+      
+      t14 <- system.time({
+        # stepwise from null model using AIC 
+        stepAICnull_train <- step(null,scope=list(lower=null,upper=full),k=2,trace=0)
+        
+        y_hat <- round(predict(stepAICnull_train,
+                               newdata = df[test_set,], 
+                               type = "response"))
+        err_mat_lr_null_aic[test_set,ITER] <- as.numeric(y_hat!=df[test_set,]$y)
+      })[3]
+   
+      time_mat_lr_null_aic[JTER,ITER] <- t14
+      
+      ##############################################################
+      
+      # Cross-validated LASSO
+      
+      t15 <- system.time({
+        cv_lasso <- cv.glmnet(X_mat[train_set,], df_std$y[train_set], alpha = 1, family = "binomial")
+        y_hat <- round(predict(cv_lasso,newx = X_mat[test_set,], type="response"))
+        err_mat_lr_lasso1[test_set,ITER] <- as.numeric(y_hat!=df[test_set,]$y)
+      
+      })[3]
+      #cat(ITER,JTER,"lr cv_lasso",t15,"\n")
+      
+      time_mat_lr_lasso1[JTER,ITER] <- t15
+      
+      ##############################################################
+      
+      t16 <- system.time({
+        df_train <- df[train_set,]
+        df_train$y <- as.numeric(df_train$y==1)
+        df_test <- df[test_set,]
+        df_test$y <- as.numeric(df_test$y==1)
+                        
+        res_nn <- neuralnet(y~., data=df_train, hidden=3)
+        pred <- predict(res_nn, df[test_set,])
+        y_hat <- as.numeric(pred[,1] > 0.5)
+      })[3]
+      err_mat_nn[test_set,ITER] <- as.numeric(y_hat!=df_test$y)
+      
+      time_mat_nn[JTER,ITER] <- t16
+    }
+  }
+  save.image(resultFileName)
+} else {
+  load(resultFileName) 
+}
+```
+
+```{r}
+
+objnames <- ls()[grepl("err_mat_", ls())]
+
+# Get all of the error matrices and put them in a list
+lerr_mat <- map( objnames, get)
+
+myfun <- function(x) {
+  return(apply(x,2,mean))
+}
+
+lcv_errs <-  map(lerr_mat,myfun)
+
+tab <- t(matrix(unlist(lcv_errs),nrow=length(lcv_errs),byrow=TRUE))
+colnames(tab) <- c("KNN",
+                   "LDA",
+                   "LR",
+                   "LR full AIC",
+                   "LR full BIC",
+                   "LR LASSO 1",
+                   "LR LASSO 2",
+                   "LR null AIC",
+                   "LR null BIC",
+                   "NN",
+                   "QDA",
+                   "RF",
+                   "rpart gini",
+                   "rpart info",
+                   "SVM linear",
+                   "SVM radial",
+                   "SVM poly")
+
+tab <- tab[,-7]
+
+#boxplot(tab)    
+tab2 <- data.frame(vals=as.vector(tab),
+                   methods=rep(colnames(tab),each=nrow(tab)))
+g <- tab2 %>% ggplot(aes(x=methods,y=vals,fill=methods)) +
+  coord_flip() +
+  geom_boxplot() +
+  theme_bw() +
+  xlab("Methods") +
+  ylab("CV error")
+g
+```

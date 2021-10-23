@@ -171,20 +171,20 @@ y<-Y1$cho_score
 
 temp_dat<-data.frame(cbind(y,x)) %>% na.omit() # need to drop Chol_score in X2 since Y is calculated based on chol_score
 temp_dat
-y<-temp_dat$y
+
 temp_dat_bal<-smote(y~., data = temp_dat, k=10)
 
 table(temp_dat_bal$y) # highly unbalanced data: 1882 0 and 280 1
 
 ```
 
-### Logistic regression on unbalanced data
+### Logistic regression
 
 ```{r}
 options(warn =-1) # do not show warning
 # use one-hot encoding
 xx<-one_hot(as.data.table(temp_dat[, -1]))
-#xx<-x
+xx<-x
 # model selection (step/CV) + CV test results
 repeats <- 1
 res1 <- cv_penLogistic(y,xx,method="vanilla", repeats=repeats)
@@ -195,124 +195,6 @@ res5 <- cv_penLogistic(y,xx,method="stepwiseBIC", repeats=repeats)
 res6 <- cv_penLogistic(y,xx,method="ridge", repeats=repeats)
 res7 <- cv_penLogistic(y,xx,method="lasso", repeats=repeats)
 res8 <- cv_penLogistic(y,xx,method="firth",repeats=repeats)
-
-```
-
-```{r}
-tab <- cbind(
-  apply(res1[[1]],2,mean),
-  apply(res2[[1]],2,mean),
-  apply(res3[[1]],2,mean),
-  apply(res4[[1]],2,mean),
-  apply(res5[[1]],2,mean),
-  apply(res6[[1]],2,mean),
-  apply(res7[[1]],2,mean),
-  apply(res8[[1]],2,mean))
-
-colnames(tab) <- c("logistic",
-                   "fwdAIC",
-                   "fwdBIC",
-                   "bwdAIC",
-                   "bwdBIC",
-                   "ridge",
-                   "lasso",
-                   "firth")
-
-boxplot(tab)
-datasummary_skim(data=data.frame(100*tab), fmt = "%.2f")
-
-# extract coefficients of models
-lcoef <- list(res1[[2]]$coef,
-              res2[[2]]$coef,
-              res3[[2]]$coef,
-              res4[[2]]$coef,
-              res5[[2]]$coef,
-              drop(coef(res6[[2]], res6[[2]]$lambda.1se )),
-              drop(coef(res7[[2]], res7[[2]]$lambda.1se )),
-              res8[[2]]$coef
-)
-
-varnames <- unique(unlist(map(lcoef,names)))
-tab = matrix(0, nrow = length(lcoef), ncol = length(varnames))
-colnames(tab) = varnames
-for (i in 1:length(lcoef)) 
-  tab[i, names(lcoef[[i]])] = lcoef[[i]]
-
-rownames(tab) <- paste("model",1:length(lcoef),sep="")
-logistic_coef_table<-kable(t(tab))
-logistic_coef_table
-
-# model 6 ridge shows best result
-drop(coef(res6[[2]], res6[[2]]$lambda.1se))
-```
-
-### Logistic regression on balanced data
-
-```{r}
-options(warn =-1) # do not show warning
-# use one-hot encoding
-xx<-one_hot(as.data.table(temp_dat_bal[, -1]))
-#xx<-x
-y<-temp_dat_bal$y
-# model selection (step/CV) + CV test results
-repeats <- 1
-res1 <- cv_penLogistic(y,xx,method="vanilla", repeats=repeats)
-res2 <- cv_penLogistic(y,xx,method="fowardAIC", repeats=repeats)
-res3 <- cv_penLogistic(y,xx,method="forwardBIC", repeats=repeats)
-res4 <- cv_penLogistic(y,xx,method="stepwiseAIC", repeats=repeats)
-res5 <- cv_penLogistic(y,xx,method="stepwiseBIC", repeats=repeats)
-res6 <- cv_penLogistic(y,xx,method="ridge", repeats=repeats)
-res7 <- cv_penLogistic(y,xx,method="lasso", repeats=repeats)
-res8 <- cv_penLogistic(y,xx,method="firth",repeats=repeats)
-
-```
-
-```{r}
-tab <- cbind(
-  apply(res1[[1]],2,mean),
-  apply(res2[[1]],2,mean),
-  apply(res3[[1]],2,mean),
-  apply(res4[[1]],2,mean),
-  apply(res5[[1]],2,mean),
-  apply(res6[[1]],2,mean),
-  apply(res7[[1]],2,mean),
-  apply(res8[[1]],2,mean))
-
-colnames(tab) <- c("logistic",
-                   "fwdAIC",
-                   "fwdBIC",
-                   "bwdAIC",
-                   "bwdBIC",
-                   "ridge",
-                   "lasso",
-                   "firth")
-
-boxplot(tab)
-datasummary_skim(data=data.frame(100*tab), fmt = "%.2f")
-
-# extract coefficients of models
-lcoef <- list(res1[[2]]$coef,
-              res2[[2]]$coef,
-              res3[[2]]$coef,
-              res4[[2]]$coef,
-              res5[[2]]$coef,
-              drop(coef(res6[[2]], res6[[2]]$lambda.1se )),
-              drop(coef(res7[[2]], res7[[2]]$lambda.1se )),
-              res8[[2]]$coef
-)
-
-varnames <- unique(unlist(map(lcoef,names)))
-tab = matrix(0, nrow = length(lcoef), ncol = length(varnames))
-colnames(tab) = varnames
-for (i in 1:length(lcoef)) 
-  tab[i, names(lcoef[[i]])] = lcoef[[i]]
-
-rownames(tab) <- paste("model",1:length(lcoef),sep="")
-logistic_coef_table<-kable(t(tab))
-logistic_coef_table
-
-# model 6 ridge shows best result
-drop(coef(res6[[2]], res6[[2]]$lambda.1se))
 ```
 
 ### Neural network
