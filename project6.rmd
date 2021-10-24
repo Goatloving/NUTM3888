@@ -147,15 +147,65 @@ for (i in 1:length(lcoef))
 
 rownames(tab) <- paste("model",1:length(lcoef),sep="")
 kable(t(tab))
+
 ```
 
 Above codes show the coefficients of BMISC of many models are close to 0, suggesting BMI may not be a good indicator for predicting high cholesterol. 
 On the other hand, SEX, AGE, PHDCMWBC, DIASTOL, TRIGRESB, LDLRESB, HBA1PREB, GLUCFREB, HDLCHREB, APOBRESB are important predictors for predicting high cholesterol. 
 
 
+
+
 # Justify
 
 ## BMI vs. High cholesterol
+
+```{r}
+Y
+X
+temp_dat<-cbind(Y,X)
+temp_dat<-temp_dat %>% mutate(
+  HCHOLBC = ifelse(HCHOLBC==5, 0, 1)
+)
+model<-glm(HCHOLBC~., data = temp_dat)
+y_pred<-predict(model, temp_dat, type="response")
+hist(y_pred)
+
+result<-cbind(y_pred,temp_dat)
+
+
+mean(result[which(result$HCHOLBC==1),"BMISC"]) # 29.4844 得病的人BMI 平均值
+mean(result[which(result$HCHOLBC==0),"BMISC"]) # 27.1008 没有得病的人 BMI平均值
+
+
+mean(result[which(result$HCHOLBC==1),"PHDCMWBC"]) # 99.1524 得病的人BMI 平均值
+mean(result[which(result$HCHOLBC==0),"PHDCMWBC"]) # 91.1789 没有得病的人 BMI平均值
+
+mean(result[which(result$HCHOLBC==1),"y_pred"]) # 0.4379 得病的人 平均值
+mean(result[which(result$HCHOLBC==0),"y_pred"]) # 0.0845 不得病的人 平均值
+
+wilcox.test(result[which(result$HCHOLBC==1),"y_pred"],result[which(result$HCHOLBC==0),"y_pred"])
+wilcox.test(result[which(result$HCHOLBC==1),"BMISC"], result[which(result$HCHOLBC==0),"BMISC"])
+
+t.test(result[which(result$HCHOLBC==1),"BMISC"], result[which(result$HCHOLBC==0),"BMISC"])
+
+t.test(result[which(result$HCHOLBC==1),"PHDCMWBC"], result[which(result$HCHOLBC==0),"PHDCMWBC"])
+t.test(result[which(result$HCHOLBC==1),"y_pred"],result[which(result$HCHOLBC==0),"y_pred"])
+
+
+
+
+
+high_bmi<-result %>% filter(BMISC>30)
+low_bmi<-result %>% filter(BMISC<=30)
+
+c(mean(high_bmi$y_pred[, which(HCHOLBC==1)]), mean(low_bmi$y_pred))
+
+mean(high_bmi[which(high_bmi$HCHOLBC==1),"y_pred"]) # low 
+mean(low_bmi[which(low_bmi$HCHOLBC==1),"y_pred"]) 
+
+```
+
 
 ```{r bmi cho}
 bmi_high <- dat2%>% filter(dat2$BMISC >= 30)
@@ -173,6 +223,14 @@ Based on BMI, we can see that
 - 15.86% of high BMI people have high cholesterol (ideally, the majority of them should have, since they ARE in obesity according to bmi)
 
 To beat BMI, 
+
+
+方案3:
+```{r}
+
+```
+
+
 方案1:
 ```{r}
 
