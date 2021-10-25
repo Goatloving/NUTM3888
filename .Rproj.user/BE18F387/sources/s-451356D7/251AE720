@@ -13,15 +13,16 @@
         "tempName": "Untitled1",
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "79,14",
-        "scrollLine": "50"
+        "cursorPosition": "47,8",
+        "scrollLine": "28",
+        "docOutlineVisible": "1"
     },
     "folds": "",
-    "lastKnownWriteTime": 1634899179,
+    "lastKnownWriteTime": 1635174327,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1634899179,
+    "last_content_update": 1635174327176,
     "read_only": false,
     "read_only_alternatives": []
 }

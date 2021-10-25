@@ -211,3 +211,15 @@ smote.exs <- function(data,tgt,N,k)
   colnames(newCases) <- colnames(data)
   newCases
 }
+
+calculate_f1<-function (matrix){
+  tp<-matrix[1,1]
+  fn<-matrix[1,2]
+  fp<-matrix[2,1]
+  tn<-matrix[2,2]
+  
+  precision<-tp/(tp+fp)
+  recall<-tp/(tp+fn)
+  f1<-2*precision*recall/(precision+recall)
+  return (f1)
+}

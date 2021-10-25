@@ -1,7 +1,9 @@
 ---
-title: "Project6"
+title: "project7"
 output: html_document
 ---
+
+
 # Setup
 ```{r setup, include=FALSE}
 source('myfunc.R') # self-defiend functions
@@ -36,18 +38,25 @@ library(ROCR)
 
 
 
-## dat3
+## dat3 (sleep, diet(fruit and vege), height, weight, -BMI, -biomarkers)
 
 ```{r}
 #dat<-tech_biom %>% filter (AGEC >= 19, AGEC<=64, SMKSTAT==5)  # filter age and smoke status
-dat<-tech_biom %>% filter (AGEC >= 19, AGEC<=64)  # filter age only
-var_list<-c("PHDKGWBC","PHDCMHBC","SLPTIME","DIETRDI","DIETQ5","DIETQ5","SEX","AGEC","DIABBC","HCHOLBC","HSUGBC","HYPBC","PHDCMWBC","EXLWMBC","EXLWVBC", "SYSTOL","DIASTOL","CVDMEDST","SMKSTAT") # add/remove variables that are interested
+dat<-tech_biom
+
+dat<-dat%>% mutate(
+ rfm = ifelse(SEX==2, 76-(20*(PHDCMHBC/PHDCMWBC)),64-(20*(PHDCMHBC/PHDCMWBC)) )
+)
+
+
+
+var_list<-c("rfm","PHDKGWBC","PHDCMHBC","SLPTIME","DIETRDI","DIETQ5","DIETQ8","SEX","AGEC","DIABBC","HCHOLBC","HSUGBC","HYPBC","PHDCMWBC","EXLWMBC","EXLWVBC", "SYSTOL","DIASTOL","CVDMEDST","SMKSTAT") # add/remove variables that are interested
 dat3<-dat %>% select (var_list) # select columns that we are interested
 dat3$EXLWMBC<-as.numeric(as.character(dat$EXLWMBC)) # exerices time should be numeric 
 dat3$EXLWVBC<-as.numeric(as.character(dat$EXLWVBC)) # exerciese time should be numeric
 str(dat3) 
-#dat3c<-dat3%>%na.omit()
-#str(dat3c)
+dat3c<-dat3%>%na.omit()
+str(dat3c)
 #table(dat3c$CVDMEDST)
 
 hist(dat3$SYSTOL)
@@ -77,9 +86,11 @@ dat2c
 
 # Models
 
-## Model 33
+## RFM = 
 
-SMOTE based on model 32
+## Model 35 (HYPBC)
+
+Y: HYPBC (undersamping-> ~300 class = 1)
 
 ```{r}
 str(dat3c)
@@ -90,22 +101,118 @@ X<-dat3c%>% select (!response)
 
 
 y<-Y %>% mutate(
-  HCHOLBC = ifelse((HCHOLBC==5), 0, ifelse((HCHOLBC==3|HCHOLBC==2|HCHOLBC==1),1, NA))
+  HYPBC = as.factor(ifelse((HYPBC==5), 0, ifelse((HYPBC==3|HYPBC==2|HYPBC==1),1, NA)))
 )
 Y
-y<-y$HCHOLBC # y is binary (0,1)
+y<-y$HYPBC # y is binary (0,1)
 x<-X
-
+table(y)
 str(x)
 ```
-
 ```{r}
 temp_dat<-cbind(y,x)
 temp_dat<-na.omit(temp_dat)
 table(temp_dat$y)
+a<-temp_dat[which(temp_dat$y==0),]
+aa<-a[1:300,]
+aa
+b<-temp_dat[which(temp_dat$y==1),]
+b
+temp_dat<-rbind(aa,b)
+
+str(dat3c)
+#temp_dat <-smote(y ~., temp_dat, perc.over=600, perc.under=2)
+
+str(temp_dat)
+# K-fold CV
+k_fold = 10
+folds<-createFolds(y=temp_dat[,1],k=k_fold)
+
+# create some matrix to record results during k-fold cv
+result_full<- matrix(NA, k_fold, 2) # record performance indicators
+model_full=list() # record model
+result_bmi<- matrix(NA, k_fold, 2)
+model_bmi=list()
+result_nobmi<- matrix(NA, k_fold, 2)
+model_nobmi=list()
 
 
-temp_dat <-smote(y~., temp_dat, perc.over=600, perc.under=200)
+for (i in 1:k_fold){
+  fold_test<-temp_dat[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-temp_dat[-folds[[i]],] # remaining is training set
+  
+  # glm
+  model<-glm(y~., data=temp_dat, family=binomial)
+  pred<-predict(model, fold_test, type="response") # numeric predicted values
+  fold_predict<-round(pred) # only 0 and 1 (if >=0.5 then 1 else 0)
+  matrix<-table(fold_predict, fold_test$y)# confusion matrix
+  if (nrow(matrix<2)){
+    matrix<-rbind(matrix,c(0,0))
+  }
+  
+  
+  matrix<-matrix[2:1,2:1] # note the consequence is reversed such that class 1 is positive
+  
+  matrix
+  
+  f1<-calculate_f1(matrix) # calculate f1 score
+  auc<-roc(fold_test$y, fold_predict)$auc # calculate AUC 
+  model_full[i]<-model
+  result_full[i,1]<-f1
+  result_full[i,2]<-auc
+    
+}
+
+# make a table to exhibit all results from different models
+k_th<-seq(1:(k_fold+1))
+result<-data.frame(cbind(result_full))
+colnames(result)<-c("Full F1","Full AUC")
+avg_result=apply(result[,],2,mean, na.rm=TRUE) # avearge value of each 
+final_result<-rbind(result,avg_result)
+final_result<-cbind(k_th, final_result)
+final_result[(k_fold+1),1]="Average"
+final_result
+
+
+summary(model)
+
+confusionMatrix(matrix)
+```
+
+## Model 34 (HSUGBC)
+
+- Y HSUGBC, under sampling (only contains ~100 class 1)
+
+```{r}
+str(dat3c)
+response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
+
+Y<-dat3c%>% select (response) 
+X<-dat3c%>% select (!response)
+
+
+y<-Y %>% mutate(
+  HSUGBC = as.factor(ifelse((HSUGBC==5), 0, ifelse((HSUGBC==3|HSUGBC==2|HSUGBC==1),1, NA)))
+)
+Y
+y<-y$HSUGBC # y is binary (0,1)
+x<-X
+table(y)
+str(x)
+```
+```{r}
+temp_dat<-cbind(y,x)
+temp_dat<-na.omit(temp_dat)
+table(temp_dat$y)
+a<-temp_dat[which(temp_dat$y==0),]
+aa<-a[1:100,]
+aa
+b<-temp_dat[which(temp_dat$y==1),]
+b
+temp_dat<-rbind(aa,b)
+
+str(dat3c)
+#temp_dat <-smote(y ~., temp_dat, perc.over=600, perc.under=2)
 
 str(temp_dat)
 # K-fold CV
@@ -164,7 +271,111 @@ confusionMatrix(matrix)
 ```
 
 
-## Model 32
+## Model 33 (HCHOLBC)
+
+Y: HCHOLBC, binary
+X: 
+
+undersampling y=0
+y=0 -> ~300
+y=1 -> ~280
+
+```{r}
+str(dat3c)
+response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
+
+Y<-dat3c%>% select (response) 
+X<-dat3c%>% select (!response)
+
+
+y<-Y %>% mutate(
+  HCHOLBC = as.factor(ifelse((HCHOLBC==5), 0, ifelse((HCHOLBC==3|HCHOLBC==2|HCHOLBC==1),1, NA)))
+)
+Y
+y<-y$HCHOLBC # y is binary (0,1)
+table(y)
+x<-X
+
+str(x)
+```
+
+```{r}
+temp_dat<-cbind(y,x)
+temp_dat<-na.omit(temp_dat)
+table(temp_dat$y)
+a<-temp_dat[which(temp_dat$y==0),]
+aa<-a[1:300,]
+aa
+b<-temp_dat[which(temp_dat$y==1),]
+b
+temp_dat<-rbind(aa,b)
+
+str(dat3c)
+#temp_dat <-smote(y ~., temp_dat, perc.over=600, perc.under=2)
+
+str(temp_dat)
+# K-fold CV
+k_fold = 10
+folds<-createFolds(y=temp_dat[,1],k=k_fold)
+
+# create some matrix to record results during k-fold cv
+result_full<- matrix(NA, k_fold, 2) # record performance indicators
+model_full=list() # record model
+result_bmi<- matrix(NA, k_fold, 2)
+model_bmi=list()
+result_nobmi<- matrix(NA, k_fold, 2)
+model_nobmi=list()
+
+
+for (i in 1:k_fold){
+  fold_test<-temp_dat[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-temp_dat[-folds[[i]],] # remaining is training set
+  
+  # glm
+  model<-glm(y~., data=temp_dat, family=binomial)
+  pred<-predict(model, fold_test, type="response") # numeric predicted values
+  fold_predict<-round(pred) # only 0 and 1 (if >=0.5 then 1 else 0)
+  matrix<-table(fold_predict, fold_test$y)# confusion matrix
+  if (nrow(matrix<2)){
+    matrix<-rbind(matrix,c(0,0))
+  }
+  
+  
+  matrix<-matrix[2:1,2:1] # note the consequence is reversed such that class 1 is positive
+  
+  matrix
+  
+  f1<-calculate_f1(matrix) # calculate f1 score
+  auc<-roc(fold_test$y, fold_predict)$auc # calculate AUC 
+  model_full[i]<-model
+  result_full[i,1]<-f1
+  result_full[i,2]<-auc
+    
+}
+
+# make a table to exhibit all results from different models
+k_th<-seq(1:(k_fold+1))
+result<-data.frame(cbind(result_full))
+colnames(result)<-c("Full F1","Full AUC")
+avg_result=apply(result[,],2,mean, na.rm=TRUE) # avearge value of each 
+final_result<-rbind(result,avg_result)
+final_result<-cbind(k_th, final_result)
+final_result[(k_fold+1),1]="Average"
+final_result
+
+
+summary(model)
+
+confusionMatrix(matrix)
+```
+
+
+## Model 32 (HCHOLBC)
+
+- Y:HCHOLBC
+- X: new predictors 
+
+
 ```{r}
 str(dat3c)
 response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
@@ -244,7 +455,7 @@ confusionMatrix(matrix)
 ```
 
 
-## Model 31
+## Model 31 (CVDMEDST)
 
 - Y: CVDMEDST
 - x: mixture of numerical and categorical values
@@ -272,7 +483,6 @@ str(x)
 temp_dat<-cbind(y,x)
 temp_dat<-na.omit(temp_dat)
 
-
 str(temp_dat)
 # K-fold CV
 k_fold = 10
@@ -281,8 +491,8 @@ folds<-createFolds(y=temp_dat[,1],k=k_fold)
 # create some matrix to record results during k-fold cv
 result_full<- matrix(NA, k_fold, 2) # record performance indicators
 model_full=list() # record model
-result_bmi<- matrix(NA, k_fold, 2)
-model_bmi=list()
+result_rfm<- matrix(NA, k_fold, 2)
+model_rfm=list()
 result_nobmi<- matrix(NA, k_fold, 2)
 model_nobmi=list()
 
@@ -300,6 +510,9 @@ for (i in 1:k_fold){
     matrix<-rbind(matrix,c(0,0))
   }
   
+  if (i==5){
+    summary(model)
+  }
   
   matrix<-matrix[2:1,2:1] # note the consequence is reversed such that class 1 is positive
   f1<-calculate_f1(matrix) # calculate f1 score
@@ -307,24 +520,39 @@ for (i in 1:k_fold){
   model_full[i]<-model
   result_full[i,1]<-f1
   result_full[i,2]<-auc
-    
+  
+  # # rfm
+  # model<-glm(y~rfm, data=temp_dat, family=binomial)
+  # pred<-predict(model, fold_test, type="response") # numeric predicted values
+  # fold_predict<-round(pred) # only 0 and 1 (if >=0.5 then 1 else 0)
+  # matrix<-table(fold_predict, fold_test$y)# confusion matrix
+  # if (nrow(matrix<2)){
+  #   matrix<-rbind(matrix,c(0,0))
+  # }
+  # 
+  # 
+  # matrix<-matrix[2:1,2:1] # note the consequence is reversed such that class 1 is positive
+  # f1<-calculate_f1(matrix) # calculate f1 score
+  # auc<-roc(fold_test$y, fold_predict)$auc # calculate AUC 
+  # model_rfm[i]<-model
+  # result_rfm[i,1]<-f1
+  # result_rfm[i,2]<-auc
+  
 }
 
 # make a table to exhibit all results from different models
 k_th<-seq(1:(k_fold+1))
-result<-data.frame(cbind(result_full))
-colnames(result)<-c("Full F1","Full AUC")
+result<-data.frame(cbind(result_full, result_rfm))
+colnames(result)<-c("Full F1","Full AUC","Full F1","Full AUC")
 avg_result=apply(result[,],2,mean, na.rm=TRUE) # avearge value of each 
 final_result<-rbind(result,avg_result)
 final_result<-cbind(k_th, final_result)
 final_result[(k_fold+1),1]="Average"
 final_result
 
-
 summary(model)
 
 confusionMatrix(matrix)
-
 ```
 
 
