@@ -54,6 +54,13 @@ library(jtools)
 load("tech_data.Rdata") # load cleaned data from John's code, make sure you have the Rdata file within the working directory
 ```
 
+
+```{r}
+print("hello")
+
+```
+
+
 ```{r dataset fliter}
 #dat<-tech_biom %>% filter (AGEC >= 19, AGEC<=64, SMKSTAT==5)  # filter age and smoke status
 dat<-tech_biom %>% filter (AGEC >= 19, AGEC<=64)  # filter age and smoke status
@@ -62,6 +69,7 @@ var_list<-c("BMISC","SEX","AGEC","DIABBC","HCHOLBC","HSUGBC","HYPBC","PHDCMWBC",
 
 dat2<-dat %>% select (var_list) # select columns that we are interested
 str(dat2) # 3488 obs x 13 variables
+2
 
 skim(dat2$DIABBC)
 ```

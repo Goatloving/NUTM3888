@@ -30,6 +30,8 @@ library(broom)
 library(jtools)
 library(ranger)
 library(ROCR)
+
+library(ranger)
 ```
 
 # Todo
@@ -573,6 +575,72 @@ final_result
 summary(model)
 
 confusionMatrix(matrix)
+```
+
+### Random Forest
+
+```{r}
+
+
+
+y<-as.factor(y)
+temp_dat<-cbind(y,x)
+temp_dat<-na.omit(temp_dat)
+str(temp_dat)
+
+# classification tree
+model<-rpart(y~., data=temp_dat,parms = list(split="information"))
+
+
+# 设置cp值
+rpart_cont <- rpart.control(cp=0)
+# 对树的模型设置CP值
+model <- rpart(y~.,data=temp_dat, 
+              control = rpart_cont,
+              parms = list(split="information"))
+
+library(flextable)
+df <- data.frame(model$cptable)
+ft <- flextable(df) %>%
+  autofit()
+ft
+cpvals <- model$cptable[,1]
+nsplit <- model$cptable[,2]
+xerror <- model$cptable[,4]
+# 下面这句话是找到cp table中 xerror最小的一行所对应的行号(index)
+minpos <- min(seq_along(xerror)[xerror == min(xerror)])     
+rpart.plot(model)
+
+
+# Random forest
+model<-randomForest(
+  y~.,
+  data=temp_dat,
+  num.trees = 500,
+  min.node.size = 5,
+  mtry=floor((ncol(temp_dat)-1)/3),
+  #mrty=22,
+  seed=2021,
+  respect.unordered.factors = "order",
+)
+
+model
+table(model$y)
+
+library(vip)
+
+
+p1<-vip::vip(model,num_features=10,bar=FALSE)
+
+p1
+
+library(pdp)
+partial(model, pred.var = c("BMISC","AGEC"), prob=TRUE, plot=TRUE)
+
+#%>% plotPartial()
+
+#plotPartial(model)
+
 ```
 
 
