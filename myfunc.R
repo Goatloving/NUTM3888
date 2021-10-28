@@ -1,3 +1,7 @@
+mystd <-function (x){
+  x<- (x-mean(x, na.rm=TRUE))/sd(x, na.rm=TRUE)
+}
+
 cv_penLogistic <- function(y,X,method=c("vanilla",
                                         "fowardAIC",
                                         "forwardBIC",

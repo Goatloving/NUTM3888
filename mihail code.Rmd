@@ -1,0 +1,519 @@
+---
+title: "mihail code"
+output: html_document
+---
+Just copy pasting here in case there’s any issues uploading to github:
+I was working on the same page as my initial exploratory analysis, so the group section begins after the “file = “final_data.Rdata”” section (line 221, or rouhgly page 7 on this)
+
+
+
+
+```{r}
+library(resample)
+library(data.table)
+library(dplyr)
+library(plyr)
+library(lattice)
+library(remotes)
+library(naniar)
+library(tidyr)
+```
+
+###First thing to check is to make sure there are no duplicates in the data, which I do by checking that no unique ID is listed twice
+
+```{r}
+my_biom <- tech_biom
+n_occur <- data.frame(table(my_biom$ABSPID))
+n_occur[n_occur$Freq > 1,]
+```
+#No unique ID appears more than once, so unless all the same information has been entered under 2 separate ID's, we can count out duplicates.
+
+###Just manually taking a look at the clean dataset, seeing some issues. Brainstorming, I notice a few things off the bat:
+-Obesity and/or BMI measurements may not be applicable/useful information in children under a certain age (probably before around 5)
+-There are certain values to signify N/A values (ie weight going from 1-150, then 997/998/999 being different error meanings. Will need to check for values between 150-997, as well as see if we just remove the N/A values)
+-In the total time spent exercising, 9996 appears to be some sort of missing value, but is not listed in the data dictionary. It would be physically impossible for any human to exercise this much, and the number itself appears several times.
+-for income measurements, check values between 10 and 99?
+-ADTOTSE (total time sitting/lying down) - care for 0 / 9996 results
+-Sleep duration minutes prior to interview? Do we care about just the past day?
+-CVDMEST = Dyslipidaemia status?
+-DIAHBRSK = HbA1c?
+
+#Observing the technically usable data as a table
+```{r}
+DT::datatable(my_biom)
+```
+#Checking the structure
+```{r}
+str(my_biom)
+```
+#First we make a basic move: Round numeric values to 2 dp so that they're constant
+
+```{r}
+my_biom$BMISC <- round(my_biom$BMISC, 2)
+my_biom$PHDKGWBC <- round(my_biom$PHDKGWBC, 2)
+my_biom$PHDCMHBC <- round(my_biom$PHDCMHBC ,2)
+my_biom$PHDCMWBC <- round(my_biom$PHDCMWBC, 2)
+```
+
+#Next, take a look at some NA values
+
+```{r}
+na_count <- sapply(my_biom, function(y) sum(length(which(is.na(y)))))
+```
+
+```{r}
+na_count <- data.frame(na_count)
+na_count
+```
+
+#Let's see if this lines up by quickly glancing at which values are "observed" in the missing columns:
+```{r}
+missing_values <- NULL
+for (i in 1:length(my_biom)){
+  missing_values[i] <- length(which(my_biom[i] == 'observed'))
+}
+#shows us how many cells in each column have the value 'observed'
+missing_values
+```
+#For ease of comparison, let's convert that to how many are 'not observed'.
+```{r}
+missing_values[missing_values == 0] <- NA
+missing_values <- missing_values[!is.na(missing_values)] #removing all 0 values as these were not columns that measured 'observed'
+missing_values <- 12152 - missing_values #get total n count of biom data minus 'observed' values to account for all 'non observed'/missing data
+missing_values
+```
+
+#Whilst not a comprehensive view of the missing values, this was just checking to see if the "observed" values match up to the NA values. The evidence here suggests that only 9 variables had any missing values, which even a precursory glance at the data will show is incorrect. Indeed, looking at the table of the biom data it seems that many of the 'is_missing' variables do not correctly reflect the status of the data. I feel that re-coding the function which added the 'is_missing' columns to reflect this properly would be much tricker than simply counting N/A values, and to run smoothly may even require altering the original data. As such, I will assess patterns of missingness based on the current NA values rather than the _miss variables.
+
+
+#Manually looking over the data, two factors of note are:
+#1. 0 being treated as N/A in the Marital Status column (SMSBC), when all 0's are children (younger than 15). As such, this value is not 'missing' but rather should be treated as either '3 - not married' or, as I would prefer, its own separate 4th category.
+#2. A value of 9996 is quite prevalent in the 'minutes exercised' columns, but is not listed in the data dictionary. In a real-world scenario, I would check these results with the person collecting the data. Here, I have to assume that this is a missing value.
+
+
+
+```{r}
+my_biom$SMSBC <- replace(my_biom$SMSBC, is.na(my_biom$SMSBC),0)
+count(my_biom$SMSBC)
+sum(my_biom$AGEC < 15)
+```
+#taking a quick graphical look at marriage status by age
+```{r}
+bwplot(AGEC ~ SMSBC, data = my_biom)
+```
+
+#This result indicates that not a single person aged 15 or over in the study was unmarried. Going back to the original data, this is indeed how it was coded. This means one of 3 issues have occurred with the data:
+#a) 1. indicates married, 2. indicates unmarried (most instances of teenagers in the dataset are listed as 2)
+#b) The question posed does not line up exactly (ie, it may have just been asking whether they're currently in a relationship or not)
+#C) Data was simply not entered correctly
+#I assume the case is 'a', but in any case, I will not be considering marital status as a factor in comparisons until I receive further confirmation as the data is not meaningful to me in its current state.
+
+
+
+
+#Changing 9996 values in exercise to NA. Leaving 0 atm, as it's quite possible a lot of people don't engage in anything they would consider 'exercise'.
+#Also need to update 9996 and 9999 values in total time spent sitting/lying down
+```{r}
+my_biom <-my_biom %>%
+  mutate(EXLWTBC = replace(EXLWTBC, EXLWTBC == 9996, NA))
+
+my_biom <-my_biom %>%
+  mutate(EXLWMBC = replace(EXLWMBC, EXLWMBC == 9996, NA))
+
+my_biom <-my_biom %>%
+  mutate(EXLWVBC = replace(EXLWVBC, EXLWVBC == 9996, NA))
+
+my_biom <-my_biom %>%
+  mutate(ADTOTSE = replace(ADTOTSE, ADTOTSE == 9996, NA))
+
+my_biom <-my_biom %>%
+  mutate(ADTOTSE = replace(ADTOTSE, ADTOTSE == 9999, NA))
+
+my_biom
+```
+#For visualisation of missing values, it helps if we remove all the columns where we know values won't be missing
+```{r}
+miss_vis_biom <- my_biom[-c(55:94)]
+miss_vis_biom = select(miss_vis_biom, -AGEC, -COBBC, -DIABBC, -HCHOLBC, -HSUGBC, -HYPBC, -DIETQ5, -DIETQ8, -SEX, -SF2SA1QN)
+miss_vis_biom
+```
+#Not the most elegant solution, but a clear visualisation of missing values by column (Enlarge)
+```{r}
+vis_miss(miss_vis_biom, warn_large_data = FALSE)
+```
+#The same data in a table
+```{r}
+miss_vis_tab <- sapply(miss_vis_biom, function(x) sum(is.na(x)))
+DT::datatable(as.data.frame(miss_vis_tab))
+```
+
+
+
+
+
+#Manually comparing variances
+```{r}
+var(my_biom$BMISC, na.rm = TRUE)
+var(my_biom$AGEC, na.rm = TRUE)
+var(my_biom$PHDKGWBC, na.rm = TRUE)
+var(my_biom$PHDCMHBC, na.rm = TRUE)
+var(my_biom$PHDCMWBC, na.rm = TRUE)
+var(my_biom$ADTOTSE, na.rm = TRUE)
+var(my_biom$DIASTOL, na.rm = TRUE)
+var(my_biom$SLPTIME, na.rm = TRUE)
+var(my_biom$SYSTOL, na.rm = TRUE)
+```
+
+#At the moment not seeing any need to exclude any numeric variables based on variance. Differences in variance seem to be largely due to scale being used to measure.
+
+
+
+#I had a quick look by just manually looking at count comparisons of all the categorical variables. Some of the offenders are: GGNTR with 3492 normal / 557 abnormal, ALTNTR with 3648/400, DIETRDI with 1088 within / 10601 not meeting, HSUGBC with 34/30/293/11796.
+#These are what I would call the "low variance" variables. Of these, I would only cut HSUGBC, as even the 293 are just "have been told you have low sugar, not current", suggesting almost everyone falls into the "not currently high sugar" group.
+
+
+#If we try to remove all rows with an NA value
+```{r}
+my_biom_no_missing <- my_biom %>% drop_na()
+my_biom_no_missing
+```
+#We get a resulting dataset with 406 rows, which I would not consider sufficient.
+
+
+###I suspect that if a data value does not have BMI, that it will have little other information provided. Checking here:
+```{r}
+bmi_miss <- filter(miss_vis_biom, is.na(BMISC))
+bmi_miss_vis_tab <- sapply(bmi_miss, function(x) sum(is.na(x)))
+DT::datatable(as.data.frame(bmi_miss_vis_tab))
+```
+
+#Whilst not necessarily true for the others, the concentration of missing values in the later variables for the BMI not missing group is very high. In addition, with obesity being the primary output variable of concern, I will be assessing the dataset without the _miss values, without the social marital status (for reasons stated above) and without any rows where the BMI value is NA as it seems to be highly correlated with many other missing values.
+
+####### COMMENTING THIS OUT FOR THE GROUP'S CODE - FINAL SET WILL NOW INCLUDE HSUGBC, MAY BE AN INDICATOR THAT THE MEASUREMENT IS FLAWED.
+
+```{r}
+final_set <- my_biom[-c(55:94)]
+final_set <- filter(final_set, !is.na(BMISC))
+#final_set = select(final_set, -HSUGBC, -SMSBC)
+final_set = select(final_set, -SMSBC)
+final_set
+```
+#Checking outliers for the numeric variables
+
+```{r}
+boxplot(final_set$BMISC, xlab = "BMI")
+boxplot(final_set$AGEC, xlab = "Age")
+boxplot(final_set$PHDKGWBC, xlab = "Weight (Kg)")
+boxplot(final_set$PHDCMHBC, xlab = "Height (cm)")
+boxplot(final_set$PHDCMWBC, xlab = "Waist circumference (cm)")
+boxplot(final_set$ADTOTSE, xlab = "Time spent sitting or lying down (mins)")
+boxplot(final_set$DIASTOL, xlab = "Diastolic Blood pressure (mmGH)")
+boxplot(final_set$SLPTIME, xlab = "Sleep time")
+boxplot(final_set$SYSTO, xlab = "Systolic blood pressure")
+```
+
+#All look fine except maybe the time spent sitting/lying down? Did we forget some missing values?
+```{r}
+summary(final_set$ADTOTSE)
+```
+#The minimum indicates 1410 minutes, or 23.5 hours a week / 3.35 hours a day.
+#The maximum indicates 9180 minutes, or 153 hours a week / just under 22 hours a day. Clearly, the maximum is also factoring in time spent sleeping, whereas the minimum (and median) do not count time spent sleeping in this.
+#There's no way to know for sure who has accounted for sleep and who hasn't, making the data problematic. I could, for example, remove any values where the time equates to over 16 hours per day (if we are to assume a person sleeps for 8). I wouldn't feel confident making this decision myself, however, so for the moment I will leave the data as is but treat the ADTOTSE variable with great scrutiny.
+#I am saving both the final dataset, as well as the tiny set of 'no missing values' dataset just in case.
+
+```{r}
+save(final_set,
+ 	my_biom_no_missing,
+ 	file = "final_data.Rdata")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+#Creating new variable to classify people into obese or not obese
+```{r}
+final_set <- final_set %>%
+          	mutate(Obese_BMI = if_else(BMISC >= 30, 1, 0)
+  )
+final_set[,c(2,11,53)]
+```
+
+#According to International Diabetes Federation, waist circumference > 80 for women and > 90 for men = obese. Let's compare the obese BMI group vs non.
+
+#Checking to see what the waist circumference looks like in the Obese group.
+```{r}
+hist(final_set$PHDCMWBC[final_set$Obese_BMI == 1])
+```
+
+#Vs what it looks like in not obese group:
+#(Note: For whatever reason these aren't loading for me, but if you just copy paste the command and run it in console the plot works)
+```{r}
+hist(final_set$PHDCMWBC[final_set$Obese_BMI == 0])
+```
+
+#There are virtually no results below 80 in the obese BMI group, and the mean is clearly much higher, suggesting that waist circumference and BMI are effective measures compared to each other.
+
+```{r}
+mean(final_set$PHDCMWBC[final_set$Obese_BMI == 0], na.rm = TRUE)
+mean(final_set$PHDCMWBC[final_set$Obese_BMI == 1], na.rm = TRUE)
+```
+#Mean Wait circumference of BMI < 30 = 81.18, mean waist cirumference of BMI > 30 = 108.45.
+
+#In the interest of fairness, let's set even the people with BMI > 30 to "not obese" if their waist is < 80 for women, <90 for men, or NA for either.
+```{r}
+final_set <- filter(final_set, !is.na(PHDCMWBC))
+```
+
+```{r}
+final_set <- final_set %>% mutate(Obese_BMI =
+          	if_else((BMISC >= 30 & SEX == 1 & PHDCMWBC >= 90) | (BMISC >= 30 & SEX == 2 & PHDCMWBC >= 80), 1, 0))
+```
+
+
+#This is a bit better, though noteably, there are several people with BMI's < 30 but with waist cirumference. If we'd like to make this even more stringest, we can calculate obesity off a new variable, ie BMI > 30 and waist circumference / height > certain amount (it could have just been that we excluded the shortest members of the study with this cutoff). This should be fine for now, but we can go into more detail if you'd like.
+
+#That aside, let's try and compare our obesity measurement to the BMI > 30 measurement. As John said, a high correlation would be an indicator that this is a successful measurement (again, not ideal as BMI isn't also perfect, but the data's got decent internal validity between high correlation of BMI to waist circumference measuring obesity, so let's compare)
+
+```{r creat obesity scores}
+#Using the data from Yang's notes here to create the obesity score
+
+final_set<-final_set %>% mutate(
+  dia_score= ifelse(DIABBC==5, 0, ifelse(DIABBC==3, 1, ifelse(DIABBC==2, 2, ifelse(DIABBC==1, 3, NA)))),
+  cho_score= ifelse(HCHOLBC==5, 0, ifelse(HCHOLBC==3, 1, ifelse(HCHOLBC==2, 2, ifelse(HCHOLBC==1, 3, NA)))),
+  sug_score= ifelse(HSUGBC==5, 0, ifelse(HSUGBC==3, 1, ifelse(HSUGBC==2, 2, ifelse(HSUGBC==1, 3, NA)))),
+  hyp_score= ifelse(HYPBC==5, 0, ifelse(HYPBC==3, 1, ifelse(HYPBC==2, 2, ifelse(HYPBC==1, 3, NA)))),
+  final_score = dia_score+cho_score+sug_score+hyp_score
+)
+```
+
+```{r}
+hist(final_set$final_score) # the final score is highly unbalanced
+nrow(final_set[which(final_set$DIABBC==5),]) # the final score of 2790 observations are 0
+
+table(final_set$final_score)
+table(final_set$Obese_BMI)
+```
+#This information shows that to have roughly the same number of people considered obese with each measurement, you'd need to set a very low cutoff. As it's hard to compare a gradual obesity 'scale' (a score of 0-12) to a simple "yes or no" cutoff, we need to create a new variable to categorise data into either "obese" or "not obese" depending on their final score from the biomarkers. 1 is obese, 0 is not.
+
+```{r}
+final_set <- final_set %>% mutate(
+  Obese_Score = ifelse(final_score >= 2, 1, 0)
+)
+table(final_set$Obese_Score)
+```
+#Just setting score cutoff at 2 or more gives us ~250 less obese people than the BMI cutoff. Let's visualise what the score 'obesity classifier' looks like
+
+```{r}
+hist(final_set$PHDCMWBC[final_set$Obese_Score == 1])
+hist(final_set$PHDCMWBC[final_set$Obese_BMI == 1])
+mean((final_set$PHDCMWBC[final_set$Obese_Score == 1]))
+mean((final_set$PHDCMWBC[final_set$Obese_BMI == 1]))
+```
+#The people classified as obese by BMI have a somewhat higher mean waist circumference than those classified as obese by the measure (108.64 vs 100.02)
+
+#Let's see what happens if we set the cutoff higher, if if obesity score has to be 4 or more:
+```{r}
+final_set <- final_set %>% mutate(
+  Obese_Score = ifelse(final_score >= 4, 1, 0)
+)
+hist(final_set$PHDCMWBC[final_set$Obese_Score == 1])
+mean((final_set$PHDCMWBC[final_set$Obese_Score == 1]))
+table(final_set$Obese_Score)
+```
+#Waist circumference increases, but it's still lower than what the BMI obesity cutoff suggests. We are also now down to just 733 people in the set considered 'obese' at what seems like a relatively low cutoff.
+#Let's see how many of these 733 are shared with the BMI classification:
+```{r}
+table(final_set$Obese_Score == 1 & final_set$Obese_BMI == 1)
+```
+#357 people are classified as obese both by the point cutoff and by the BMI cutoff, but that's
+
+```{r}
+357/733
+```
+#47.8% correlation. Not bad, but not great - and when BMI and waist circumference are the 'standard' to which we should be comparing, this doesn't seem to be quite good enough. I think it's definitely something we should mention, and something that can be used for further research as there is ABSOLUTELY a correlation here, but I don't think it's solid enough for us to preference modelling it over BMI.
+
+#What this means (for the stats students, mostly), is that we've demonstrated a correlation, and could potentially compare what a logistic regression model looks like on the BMI_obesity model as compared to the score_obesity model, and see if the explanatory variables for one fit in better than the other. This way, we can (potentially, in a way) compare to the literature and maybe even add to it.
+
+#In doing so, we're first looking at analysing the BMI score using logistic regression.
+#Cutting out variables that I don't think would be suitable for PCA and/or logistic regression. Let me know if you think there's any issues. At the moment I'm cutting binary variables, categorical variables that I can't justify converting to ordinal (ie self-perceived body mass) and potentially even any ordinal ones with few values and low variance (ie SMKDAILY).
+
+#That is to say, the analysis will be on the target variable (Obese_BMI). I will exclude the following: ABSPID, ABSHID, BMISC, SMSBC, COBBC, FEMLSBC, PHDKGWBC, PHDCMHBC, PHDCMWBC, DIABBC, HCHOLBC, HSUGBC, HYPBC, BDYMSQ04, DIETRDI, SABDYMS, SEX, SMKDAILY, SMKSTAT, ALTNTR, APOBNTR, BIORESPC, CHOLNTR, CVDMEDST, FASTSTAD, GGTNTR, GLUCFPD, LDLNTR, TRIGNTR (Note, many of these variables are just measuring the same thing as their continuous counterpart, so we're not actually missing out on anything)
+
+```{r}
+analysis_set <- select(final_set, -BMISC, -COBBC, -FEMLSBC, -PHDKGWBC, -PHDCMHBC, -PHDCMWBC, -DIABBC, -HCHOLBC, -HSUGBC, -HYPBC, -BDYMSQ04, -DIETRDI, -SABDYMS, -SEX, -SMKDAILY, -SMKSTAT, -ALTNTR, -APOBNTR, -BIORESPC, -CHOLNTR, -CVDMEDST, -FASTSTAD, -GGTNTR, -GLUCFPD, -LDLNTR, -TRIGNTR, -dia_score, -cho_score, -sug_score, -hyp_score, -final_score, -Obese_Score)
+str(analysis_set)
+```
+
+#Checking, and if need be updating all the variables to be suitably ordinal for analysis
+```{r}
+table(analysis_set$DIETQ12)
+table(analysis_set$DIETQ14)
+table(analysis_set$DIETQ5)
+table(analysis_set$DIETQ8)
+```
+#First 2 are fine. Last 2 will need to be reordered, as 8 is the smallest, then 7, then 1-6 are in increasing order (so, increasing it's 8,7,1,2,3,4,5,6)
+
+```{r}
+analysis_set <- analysis_set %>% mutate(
+  DIETQ5_FIX = ifelse(DIETQ5 == 8, 1, ifelse(DIETQ5 == 7, 2, ifelse(DIETQ5 == 1, 3, ifelse(DIETQ5 == 2, 4, ifelse(DIETQ5 == 3, 5, ifelse(DIETQ5 == 4, 6, ifelse(DIETQ5 == 5, 7, ifelse(DIETQ5 == 6, 8, NA)))))))),
+  DIETQ8_FIX = ifelse(DIETQ8 == 8, 1, ifelse(DIETQ8 == 7, 2, ifelse(DIETQ8 == 1, 3, ifelse(DIETQ8 == 2, 4, ifelse(DIETQ8 == 3, 5, ifelse(DIETQ8 == 4, 6, ifelse(DIETQ8 == 5, 7, ifelse(DIETQ8 == 6, 8, NA)))))))
+))
+table(analysis_set$DIETQ5_FIX)
+table(analysis_set$DIETQ8_FIX)
+```
+```{r}
+analysis_set <- select(analysis_set, -DIETQ5, -DIETQ8)
+```
+```{r}
+str(analysis_set)
+analysis_set$EXLWTBC <- as.numeric(analysis_set$EXLWTBC)
+analysis_set$EXLWMBC <- as.numeric(analysis_set$EXLWMBC)
+analysis_set$EXLWVBC <- as.numeric(analysis_set$EXLWVBC)
+analysis_set$SF2SA1QN <- as.numeric(analysis_set$SF2SA1QN)
+analysis_set$INCDEC <- as.numeric(analysis_set$INCDEC)
+analysis_set$DIETQ12 <- as.numeric(analysis_set$DIETQ12)
+analysis_set$DIETQ14 <- as.numeric(analysis_set$DIETQ14)
+analysis_set$ALTRESB <- as.numeric(analysis_set$ALTRESB)
+analysis_set$APOBRESB <- as.numeric(analysis_set$APOBRESB)
+analysis_set$B12RESB <- as.numeric(analysis_set$B12RESB)
+analysis_set$CHOLRESB <- as.numeric(analysis_set$CHOLRESB)
+analysis_set$DIAHBRSK <- as.numeric(analysis_set$DIAHBRSK)
+analysis_set$FOLATREB <- as.numeric(analysis_set$FOLATREB)
+analysis_set$GGTRESB <- as.numeric(analysis_set$GGTRESB)
+analysis_set$GLUCFREB <- as.numeric(analysis_set$GLUCFREB)
+analysis_set$HBA1PREB <- as.numeric(analysis_set$HBA1PREB)
+analysis_set$HDLCHREB <- as.numeric(analysis_set$HDLCHREB)
+analysis_set$LDLRESB <- as.numeric(analysis_set$LDLRESB)
+analysis_set$TRIGRESB <- as.numeric(analysis_set$TRIGRESB)
+```
+```{r}
+str(analysis_set)
+```
+#moving obese_BMI to front
+```{r}
+analysis_set <- analysis_set %>%
+  select(ABSPID, Obese_BMI, everything())
+str(analysis_set)
+```
+```{r}
+analysis_complete <- analysis_set %>% drop_na()
+str(analysis_complete)
+```
+
+#Check principal components
+```{r}
+pca_bmi <- prcomp(analysis_complete[,3:28], center = TRUE, scale = TRUE)
+pca_bmi
+```
+#Table of variance for the PC's (Taken straight from CS2 pdf material from canvas)
+```{r}
+lambda <- pca_bmi$sdev^2
+proportion <- lambda/sum(lambda)
+cum_prop <- cumsum(proportion)
+
+df_variance <- data.frame(
+  variance = lambda,
+  proportion = proportion,
+  cum_prop = cum_prop) %>%
+  round(digits = 2)
+
+pca_smry <- t(df_variance) %>%
+  as.data.frame()
+
+colnames(pca_smry) <- colnames(pca_bmi$rotation)
+rownames(pca_smry) <- c("Variance", "proportion", "Cum. prop")
+
+library(flextable)
+ft_cumprop <- flextable(
+  pca_smry %>%
+	rownames_to_column("statistic")) %>%
+  autofit()
+ft_cumprop
+
+```
+#Can't seem to get a plot going with the above, so trying a different form
+```{r}
+var_explained_bmi <- data.frame(PC = paste0("PC",1:26),
+                            	var_explained=(pca_bmi$sdev)^2/sum((pca_bmi$sdev)^2))
+var_explained_bmi
+```
+```{r}
+var_explained_bmi %>%
+  ggplot(aes(x = PC, y = var_explained, group = 1)) +
+  geom_point(size = 3) +
+  geom_line() +
+  labs(title = "Screen plot: PCA on scaled data")
+```
+
+#No idea why it's not in order, but the 'elbow' according to the screeplot is at 9 PC's, which would only account for 67% of variance in the model. Seems a little underfitted, perhaps we should consider a larger dataset, and in general doesn't look like we'd be doing an analysis based off these PC's as things stand.
+
+
+
+#Trying out with Logistic Regression (largely based off the CS3 sheet)
+
+```{r}
+y <- as.numeric(analysis_complete$Obese_BMI == 1)
+X <- data.matrix(analysis_complete %>% select(-Obese_BMI, -ABSPID))
+
+df <- data.frame(y=y, X=X)
+colnames(df) <-c("y", colnames(analysis_complete %>% select(-Obese_BMI, - ABSPID)))
+n <- length(y)
+```
+
+
+```{r}
+library(brglm)
+```
+
+
+```{r}
+null = glm(y~1, data = df, family = binomial)
+full = glm(y~., data = df, family = binomial)
+
+model1 <- glm(y~., family = binomial, data = df)
+model2 <- step(null, scope = list(lower = null, upper = full, k = 2, trace = 0))
+model3 <- step(null, scope = list(lower = null, upper = full), k = log(n), trace = 0)
+model4 <- step(full, k = 2, trace = 0)
+model5 <- step(full, k = log(n), trace = 0)
+model6 <- brglm(y~., data = df)
+
+cv_model7  <- cv.glmnet(X,y, alpha = 0, family = "binomial")
+model7 <- glmnet(X, y, alpha = 0, family = "binomial")
+
+cv_model8 <- cv.glmnet(X, y, alpha = 1, family = "binomial")
+model8 <- glmnet(X, y, alpha = 1, family = "binomial")
+```
+
+```{r}
+models <- list()
+models[['logistic full']] <- model1
+models[['forward AIC']] <- model2
+models[['forward BIC']] <- model3
+models[['backward AIC']] <- model4
+models[['backward BIC']] <- model5
+models[['firth']] <- model6
+
+library(modelsummary)
+msummary(models, stars = TRUE)
+```
+
+#Though weightings change slightly, we can see patterns emerge in the same predictors being significant in all models. Potential!
+
+
+
+
+
+
+
+
+
+

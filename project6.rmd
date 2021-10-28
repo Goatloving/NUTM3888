@@ -1,8 +1,15 @@
 ---
 title: "Project6"
-output: html_document
+output: 
+  html_document: 
+    toc: yes
+    highlight: pygments
+    theme: journal
+    number_sections: yes
 ---
+
 # Setup
+
 ```{r setup, include=FALSE}
 source('myfunc.R') # self-defiend functions
 library(tidyverse)
@@ -30,18 +37,94 @@ library(broom)
 library(jtools)
 library(ranger)
 library(ROCR)
+library(pROC)
+library(flextable)
+library(nnet)
+library(VGAM) # vglm multiple class logisitic regression
 
-library(ranger)
 ```
 
 # Todo
 
-- Random forest
-
+-   Random forest on Model 31 (y=binary) still problematic
+-   
 
 # Dataset
 
-## dat3 (sleep,  height, weight, -BMI, -biomarkers)
+```{r}
+load("tech_data.Rdata")
+```
+
+## dat5 (biom+nutr datasets combined)
+
+contains CVDMEDST (the only diease) and other predictors
+
+```{r}
+dat<-cbind(tech_biom, tech_nutr)
+predictor_list<-c("BMR","FATT1","FATT2","MOISTT1","MOISTT2","PROPER1","PROPER2","SUGPER1","SUGPER2","ALCT1","ALCT2","B1T1","B1T2","B2T1","B2T2", "B3T1","B3T2","B6T1","B6T2","B12T1","B12T2","CAFFT1","CAFFT2","FATPER1","FATPER2","TRANPER1","TRANPER2","MONOPER1","MONOPER2","POLYPER1","POLYPER2","WATERG1N","WATERG2N","PHDKGWBC","PHDCMHBC","SLPTIME","DIETRDI","DIETQ5","DIETQ8","SEX","AGEC","PHDCMWBC","EXLWMBC","EXLWVBC", "SYSTOL","DIASTOL","CVDMEDST","SMKSTAT",)
+
+#response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
+
+dat4<-dat%>% select(predictor_list) %>% filter(AGEC>=19, AGEC<=64)
+
+t_list<-colnames(dat4%>% select(contains("T1")))
+r_list<-colnames(dat4%>% select(contains("R1")))
+n_list<-colnames(dat4%>% select(contains("1N")))
+
+len<-ncol(dat4)
+
+for (i in 1: len){
+  if (colnames(dat4[i])%in% t_list){
+    
+    new_col = (dat4[,i]+dat4[,i+1])/2
+    
+    new_names = paste0("AVG_", colnames(dat4[i]))
+    
+    
+    dat4<-cbind(dat4,new_col)
+    names(dat4)[names(dat4)=="new_col"]<-new_names
+    
+  }
+   if (colnames(dat4[i])%in% r_list){
+    
+    new_col = (dat4[,i]+dat4[,i+1])/2
+    
+    new_names = paste0("AVG_", colnames(dat4[i]))
+    
+    dat4<-cbind(dat4,new_col)
+    names(dat4)[names(dat4)=="new_col"]<-new_names
+    
+   }
+   if (colnames(dat4[i])%in% n_list){
+    
+    new_col = (dat4[,i]+dat4[,i+1])/2
+    
+    new_names = paste0("AVG_", colnames(dat4[i]))
+
+    dat4<-cbind(dat4,new_col)
+    names(dat4)[names(dat4)=="new_col"]<-new_names
+    
+  }
+  
+}
+
+predictor_list2<-c("BMR","PHDKGWBC","PHDCMHBC","SLPTIME","DIETRDI","DIETQ5","DIETQ8","SEX","AGEC","PHDCMWBC","EXLWMBC","EXLWVBC", "SYSTOL","DIASTOL","CVDMEDST","SMKSTAT")
+
+avg<-dat4%>%select(contains("AVG_"))
+predict2<-dat4%>%select(predictor_list2)
+predict2
+dat5<-cbind(predict2,avg)
+dat5$EXLWMBC<-as.numeric(as.character(dat5$EXLWMBC)) # exerices time should be numeric 
+dat5$EXLWVBC<-as.numeric(as.character(dat5$EXLWVBC)) # exerciese time should be numeric
+str(dat5)
+
+dat5c<-na.omit(dat5)
+str(dat5c)
+```
+
+
+
+## dat3 (sleep, height, weight, -BMI, -biomarkers)
 
 ```{r}
 #dat<-tech_biom %>% filter (AGEC >= 19, AGEC<=64, SMKSTAT==5)  # filter age and smoke status
@@ -62,11 +145,20 @@ dat3c<-dat3%>%na.omit()
 str(dat3c)
 #table(dat3c$CVDMEDST)
 
+
+# check AGE vs. CVDMEDST
+
+a<-as.numeric(as.character(dat3$CVDMEDST))
+b<-dat3$AGEC
+
+plot(b,a)
+
+
 hist(dat3$SYSTOL)
 
 ```
 
-## dat2 
+## dat2
 
 ```{r}
 #dat<-tech_biom %>% filter (AGEC >= 19, AGEC<=64, SMKSTAT==5)  # filter age and smoke status
@@ -78,6 +170,7 @@ dat2$EXLWVBC<-as.numeric(as.character(dat$EXLWVBC)) # exerciese time should be n
 str(dat2) # 7238 obs x 20 variables
 
 ```
+
 ### dat2c (NA removed)
 
 ```{r}
@@ -86,12 +179,221 @@ dat2c
 
 ```
 
-
 # Models
+
+## Model 51(CVDMEDST)
+
+### [511] y=numerical CVD
+
+#### [5111] Step selection logistic regression
+
+```{r}
+##########################
+response<-c("CVDMEDST")
+Y<-dat5 %>%mutate(
+  CVD_cat = ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA)),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  CVD_cat_num = as.numeric(ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA))),
+)
+
+X<-dat5 %>% select (!response)
+y<-Y$CVD_cat_num # y is numerical
+
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+temp_dat<-na.omit(temp_dat)
+str(temp_dat)
+hist(temp_dat$y)
+##########################
+
+repeats<-10
+y<-temp_dat$y
+x<-temp_dat[,-1]
+x
+
+hist(y)
+
+
+res1 <- cv_penLogistic(y,x,method="vanilla", repeats=repeats)
+res2 <- cv_penLogistic(y,x,method="fowardAIC", repeats=repeats)
+res3 <- cv_penLogistic(y,x,method="forwardBIC", repeats=repeats)
+res4 <- cv_penLogistic(y,x,method="stepwiseAIC", repeats=repeats)
+res5 <- cv_penLogistic(y,x,method="stepwiseBIC", repeats=repeats)
+res8 <- cv_penLogistic(y,x,method="firth",repeats=repeats)
+
+save(res1,res2,res3,res4,res5,res8, file="5111 results")
+
+
+
+tab<-cbind(
+  apply(res1[[1]],2,mean),
+  apply(res2[[1]],2,mean),
+  apply(res3[[1]],2,mean),
+  apply(res4[[1]],2,mean),
+  apply(res5[[1]],2,mean),
+  apply(res8[[1]],2,mean)
+)
+
+
+
+colnames(tab) <- c("logistic",
+                   "fwdAIC",
+                   "fwdBIC",
+                   "bwdAIC",
+                   "bwdBIC",
+                   #"ridge",
+                   #"lasso",
+                   "firth")
+
+
+tab
+boxplot(tab)
+
+# extract coefficients of models
+lcoef <- list(res1[[2]]$coef,
+              res2[[2]]$coef,
+              res3[[2]]$coef,
+              res4[[2]]$coef,
+              res5[[2]]$coef,
+              #drop(coef(res6[[2]], res6[[2]]$lambda.1se )),
+              #drop(coef(res7[[2]], res7[[2]]$lambda.1se )),
+              res8[[2]]$coef
+)
+
+lcoef
+
+
+```
+
+#### [5112] Random forests
+
+```{r}
+###### dataset construction ######
+response<-c("CVDMEDST")
+Y<-dat5c %>% select (response) %>% mutate(
+  CVD_cat = as.numeric(ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA))),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  
+)
+
+str(Y)
+X<-dat5c %>% select (!response)
+y<-Y$CVD_cat # y is binary class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+table(y)
+str(temp_dat)
+###### dataset construction ######
+
+
+# feature selection 1 using rfe from caret package:
+control<-rfeControl(
+  functions = rfFuncs, # random forest
+  method = 'cv',
+  number = 10
+)
+
+temp_dat
+results<-rfe(temp_dat[,-1], # x, predictors
+             temp_dat[,1], # y
+             sizes = c(1:5), # how many features should be kept
+             rfeControl = control
+        
+)
+
+
+results
+(floor(ncol(temp_dat)-1)/3)
+
+model_rfe <-randomForest(
+  y~AGEC+DIASTOL+PHDCMWBC+PHDKGWBC+BMR,
+  data=temp_dat,
+  num.trees=500,
+  min.node.size=5,
+  mtry = 10,
+  seed=2021,
+  respect.unordered.factors='order',
+)
+
+table(as.numeric(model_rfe$predicted>0.5), temp_dat$y)
+p1.5112.rfe<-vip::vip(model_rfe,num_features=5,bar=FALSE)
+
+p1.5112.rfe
+p2.5112.rfe<-partial(model_rfe, pred.var = c("PHDCMWBC","AGEC"), prob=TRUE, plot=TRUE)
+
+p2.5112.rfe
+
+
+## partial dependency for each predictor:
+pics.5112<-list()
+
+pics.5112[[1]]<-partial(model_rfe, pred.var = c("PHDCMWBC"), prob=TRUE, plot=TRUE)
+pics.5112[[2]]<-partial(model_rfe, pred.var = c("AGEC"), prob=TRUE, plot=TRUE)
+pics.5112[[3]]<-partial(model_rfe, pred.var = c("BMR"), prob=TRUE, plot=TRUE)
+pics.5112[[4]]<-partial(model_rfe, pred.var = c("PHDKGWBC"), prob=TRUE, plot=TRUE)
+pics.5112[[5]]<-partial(model_rfe, pred.var = c("DIASTOL"), prob=TRUE, plot=TRUE)
+
+for (i in 1:5){
+  print(pics.5112[[i]])  
+}
+
+
+# feature selection 2 using rfe from caret package:
+control.2<-rfeControl(
+  functions = treebagFuncs, # random forest
+  method = 'cv',
+  number = 10
+)
+
+temp_dat
+results.2<-rfe(temp_dat[,-1], # x, predictors
+             temp_dat[,1], # y
+             sizes = c(1:5), # how many features should be kept
+             rfeControl = control.2
+        
+)
+
+
+results
+(floor(ncol(temp_dat)-1)/3)
+
+model_rfe <-randomForest(
+  y~AGEC+DIASTOL+PHDCMWBC+PHDKGWBC+BMR,
+  data=temp_dat,
+  num.trees=500,
+  min.node.size=5,
+  mtry = 10,
+  seed=2021,
+  respect.unordered.factors='order',
+)
+
+table(as.numeric(model_rfe$predicted>0.5), temp_dat$y)
+p1.5112.rfe<-vip::vip(model_rfe,num_features=5,bar=FALSE)
+
+p1.5112.rfe
+p2.5112.rfe<-partial(model_rfe, pred.var = c("PHDCMWBC","AGEC"), prob=TRUE, plot=TRUE)
+
+p2.5112.rfe
+
+
+## partial dependency for each predictor:
+pics.5112<-list()
+
+pics.5112[[1]]<-partial(model_rfe, pred.var = c("PHDCMWBC"), prob=TRUE, plot=TRUE)
+pics.5112[[2]]<-partial(model_rfe, pred.var = c("AGEC"), prob=TRUE, plot=TRUE)
+pics.5112[[3]]<-partial(model_rfe, pred.var = c("BMR"), prob=TRUE, plot=TRUE)
+pics.5112[[4]]<-partial(model_rfe, pred.var = c("PHDKGWBC"), prob=TRUE, plot=TRUE)
+pics.5112[[5]]<-partial(model_rfe, pred.var = c("DIASTOL"), prob=TRUE, plot=TRUE)
+
+for (i in 1:5){
+  print(pics.5112[[i]])  
+}
+
+```
+
+
 
 ## Model 35 (HYPBC)
 
-Y: HYPBC (undersamping-> ~300 class = 1)
+Y: HYPBC (undersamping-\> \~300 class = 1)
 
 ```{r}
 str(dat3c)
@@ -110,6 +412,7 @@ x<-X
 table(y)
 str(x)
 ```
+
 ```{r}
 temp_dat<-cbind(y,x)
 temp_dat<-na.omit(temp_dat)
@@ -182,7 +485,7 @@ confusionMatrix(matrix)
 
 ## Model 34 (HSUGBC)
 
-- Y HSUGBC, under sampling (only contains ~100 class 1)
+-   Y HSUGBC, under sampling (only contains \~100 class 1)
 
 ```{r}
 str(dat3c)
@@ -201,6 +504,7 @@ x<-X
 table(y)
 str(x)
 ```
+
 ```{r}
 temp_dat<-cbind(y,x)
 temp_dat<-na.omit(temp_dat)
@@ -271,15 +575,11 @@ summary(model)
 confusionMatrix(matrix)
 ```
 
-
 ## Model 33 (HCHOLBC)
 
-Y: HCHOLBC, binary
-X: 
+Y: HCHOLBC, binary X:
 
-undersampling y=0
-y=0 -> ~300
-y=1 -> ~280
+undersampling y=0 y=0 -\> \~300 y=1 -\> \~280
 
 ```{r}
 str(dat3c)
@@ -299,6 +599,8 @@ x<-X
 
 str(x)
 ```
+
+### Logistic regression
 
 ```{r}
 temp_dat<-cbind(y,x)
@@ -370,12 +672,10 @@ summary(model)
 confusionMatrix(matrix)
 ```
 
-
 ## Model 32 (HCHOLBC)
 
-- Y:HCHOLBC
-- X: new predictors 
-
+-   Y:HCHOLBC
+-   X: new predictors
 
 ```{r}
 str(dat3c)
@@ -394,6 +694,7 @@ x<-X
 
 str(x)
 ```
+
 ```{r}
 temp_dat<-cbind(y,x)
 temp_dat<-na.omit(temp_dat)
@@ -455,32 +756,424 @@ summary(model)
 confusionMatrix(matrix)
 ```
 
-
 ## Model 31 (CVDMEDST)
 
-- Y: CVDMEDST
-- x: mixture of numerical and categorical values
+-   Y: CVDMEDST
+-   x: mixture of numerical and categorical values
+
+### [311] y=CVD_cat, treat y as binary categorical
+
+#### [3111] Logistic regression
 
 ```{r}
-
-dat3c
 response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
-
-Y<-dat3c%>% select (response) 
-X<-dat3c%>% select (!response)
-
-y<-Y %>% mutate(
-  CVDMEDST = ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA))
+Y<-dat3c %>% select (response) %>% mutate(
+  CVD_cat = ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA)),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  
 )
-y<-y$CVDMEDST # y is binary (0,1)
-x<-X
 
-str(x)
+X<-dat3c %>% select (!response)
+y<-Y$CVD_cat # y is binary class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+table(y)
+str(temp_dat)
+
+model<-glm(y~., data=temp_dat)
+summary(model)
+
 ```
 
-### Logistic regression
+#### [3112] Classification Tree
+
+```{r}
+###### dataset construction ######
+response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
+Y<-dat3c %>% select (response) %>% mutate(
+  CVD_cat = as.factor(as.character(ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA)))),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  
+)
+
+X<-dat3c %>% select (!response)
+y<-Y$CVD_cat # y is binary class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+table(y)
+str(temp_dat)
+###### dataset construction ######
+
+# classification tree
+model<-rpart(y~., data=temp_dat,parms = list(split="information"))
+
+model
+# set pc
+rpart_cont <- rpart.control(cp=0)
+# model
+model <- rpart(y~.,data=temp_dat, 
+              control = rpart_cont,
+              parms = list(split="information"))
+# make a table for cp comparison
+df <- data.frame(model$cptable)
+ft <- flextable(df) %>%
+  autofit()
+ft
+cpvals <- model$cptable[,1]
+nsplit <- model$cptable[,2]
+xerror <- model$cptable[,4]
+# find the index of the min of xerror in cp table
+minpos <- min(seq_along(xerror)[xerror == min(xerror)])     
+minpos
+# prune the tree 
+model_prune<-prune.rpart(model, cp =0.009753)
+model_prune
+rpart.plot(model_prune)
+```
+
+#### X [3113] Random Forest (y={0,1} factor)
+
+The following code gives opposite prediction, probably due to the coding of Y
+
+```{r}
+###### dataset construction ######
+response <- c("DIABBC", "HCHOLBC", "HSUGBC", "HYPBC", "CVDMEDST")
+Y <- dat3c %>% select (response) %>% mutate(
+  CVD_cat = as.factor(as.character(ifelse((CVDMEDST ==4), 0, ifelse((CVDMEDST == 3 | CVDMEDST == 2 | CVDMEDST == 1), 1, NA)))),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+)
+
+X<-dat3c %>% select (!response)
+y<-Y$CVD_cat # y is binary class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+table(y)
+str(temp_dat)
+###### dataset construction ######
+
+
+# Random forest
+model<-randomForest(
+  y~.,
+  data=temp_dat,
+  num.trees = 500,
+  min.node.size = 5,
+  mtry=floor((ncol(temp_dat)-1)/3),
+  seed=2021,
+  respect.unordered.factors = "order",
+)
+
+model
+table(model$y)
+
+library(vip)
+p1.3113<-vip::vip(model,num_features=10,bar=FALSE) # variable importance
+p1.3113
+library(pdp)
+p2.3113<-partial(model, pred.var = c("PHDCMHBC","AGEC"), prob=TRUE, plot=TRUE)
+p2.3113
+```
+
+#### [3114] Random forest (y={0,1} but numeric)
+
+fixed issues in [3113] by treating y as numerical {0,1} values rather than factor
+
+
+```{r}
+###### dataset construction ######
+response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
+Y<-dat3c %>% select (response) %>% mutate(
+  CVD_cat = as.numeric(ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA))),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  
+)
+
+str(Y)
+X<-dat3c %>% select (!response)
+y<-Y$CVD_cat # y is binary class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+table(y)
+str(temp_dat)
+###### dataset construction ######
+
+
+# feature selection using rfe from caret package:
+control<-rfeControl(
+  functions = rfFuncs, # random forest
+  method = 'cv',
+  number = 10
+)
+
+temp_dat
+results<-rfe(temp_dat[,-1], # x, predictors
+             temp_dat[,1], # y
+             sizes = c(1:5), # how many features should be kept
+             rfeControl = control
+        
+)
+
+
+results
+
+
+model_rfe <-randomForest(
+  y~AGEC+BMISC+PHDCMWBC+PHDKGWBC+SEX,
+  data=temp_dat,
+  num.trees=500,
+  min.node.size=5,
+  mtry=2,
+  seed=2021,
+  respect.unordered.factors='order',
+)
+
+table(as.numeric(model_rfe$predicted>0.5), temp_dat$y)
+p1.3114.rfe<-vip::vip(model_rfe,num_features=5,bar=FALSE)
+
+p1.3114.rfe
+p2.3114.rfe<-partial(model_rfe, pred.var = c("PHDCMWBC","AGEC"), prob=TRUE, plot=TRUE)
+
+p2.3114.rfe
+
+
+# Random forest
+model<-randomForest(
+  y~.,
+  data=temp_dat,
+  num.trees = 500,
+  min.node.size = 5,
+  mtry=floor((ncol(temp_dat)-1)/3),
+  seed=2021,
+  respect.unordered.factors = "order",
+)
+
+table(as.numeric(model$predicted>0.5), temp_dat$y)
+table(model$y)
+
+
+library(vip)
+p1.3114<-vip::vip(model,num_features=10,bar=FALSE) # variable importance
+p1.3114
+library(pdp)
+p2.3114<-partial(model, pred.var = c("PHDCMHBC","AGEC"), prob=TRUE, plot=TRUE)
+p2.3114
+
+pics<-list()
+
+x<-temp_dat[,-1]
+x
+names<-colnames(x)
+names
+for (i in 1:(ncol(x))){
+  p<-partial(model, pred.var = names[i], prob=TRUE, plot=TRUE)
+  pics[[i]]  <-p
+}
+
+
+for (i in 1:ncol(x)){
+  print(pics[[i]])  
+}
+
+
+
+```
+
+#### [3115] Nerual network (y is numeric)
+
+```{r}
+###### dataset construction ######
+response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
+Y<-dat3c %>% select (response) %>% mutate(
+  CVD_cat = as.numeric(ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA))),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  
+)
+str(Y)
+X<-dat3c %>% select (!response)
+y<-Y$CVD_cat # y is binary class
+
+# normalization
+X_std<-X%>% mutate_if(
+  is.numeric, unlist(mystd)
+)
+
+
+temp_dat_std<-cbind(y,X_std) # construct temp dataset for analysis
+temp_dat_std<-droplevels(temp_dat_std)
+
+temp_dat_std_1hot<-one_hot(as.data.table(temp_dat_std))
+
+
+
+
+
+
+# set up k value for k-fold cross validation 
+k_fold=2
+# set number of hidden layers
+hid_layer=3
+# create k folds
+folds<-createFolds(y=temp_dat_std_1hot$y, k=k_fold)
+
+test_error_RMSE<-c() 
+
+for (i in 1:k_fold){
+  fold_test<-temp_dat_std_1hot[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-temp_dat_std_1hot[-folds[[i]],] # remaining is training set
+  network<-neuralnet(y~., data=fold_train, hidden =hid_layer)
+  fold_predict<-predict(network, fold_test, type="response")
+  test_error_RMSE[i]<-RMSE(fold_predict, fold_test$y) # calculate and record RMSE
+}
+
+
+network$result.matrix
+
+avg_RMSE<-sum(test_error_RMSE)/k_fold
+avg_RMSE
+
+
+net_list=list()
+
+net_list[[1]]=network
+
+net_list[[1]]
+
+plot(network)
+
+nn.results <- compute(network, fold_test)
+results <- data.frame(actual = fold_test$y,compute=nn.results$net.result, prediction = as.numeric(nn.results$net.result>0.5))
+
+results
+table(results$prediction, results$actual)
+
+hist(fold_predict)
+
+###### dataset construction ######
+
+```
+
+
+
+
+### y=CVD_numeric, treat original level as continuous numbers
+
+#### Linear regression
+
+```{r}
+response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
+Y<-dat3c %>% select (response) %>% mutate(
+  CVD_cat = as.factor(ifelse((CVDMEDST==4), "negative", ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),"positive", NA))),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  
+)
+
+X<-dat3c %>% select (!response)
+y<-Y$CVD_num # y is multiple class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+table(y)
+str(temp_dat)
+model<-lm(y~., data=temp_dat)
+summary(model)
+```
+
+#### Random Forest
+
+```{r}
+###### dataset construction ######
+response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
+Y<-dat3c %>% select (response) %>% mutate(
+  CVD_cat = as.factor(as.character(ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA)))),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  
+)
+
+table(Y$CVD_num, Y$CVDMEDST)
+
+X<-dat3c %>% select (!response)
+y<-Y$CVD_num # y is binary class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+table(y)
+str(temp_dat)
+###### dataset construction ######
+
+
+# Random forest
+model<-randomForest(
+  y~.,
+  data=temp_dat,
+  num.trees = 500,
+  min.node.size = 5,
+  mtry=floor((ncol(temp_dat)-1)/3),
+  seed=2021,
+  respect.unordered.factors = "order",
+)
+
+model
+table(model$y)
+
+library(vip)
+p1<-vip::vip(model,num_features=10,bar=FALSE) # variable importance
+p1
+library(pdp)
+p2<-partial(model, pred.var = c("PHDCMHBC","AGEC"), prob=TRUE, plot=TRUE)
+p2
+```
+
+Above partial dependency plot shows that:
+
+-   higher ages -\> lower y scores (y=1 is the worst, y=4 never have the diease)
+-   higher waist circumference -\> higher score
+
+### y=CVDMEDST, multiple classes
+
+#### Logsitic regression
+
+```{r}
+response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
+Y<-dat3c %>% select (response) %>% mutate(
+  CVD_cat = as.factor(ifelse((CVDMEDST==4), "negative", ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),"positive", NA))),
+  CVD_num = as.numeric(ifelse((CVDMEDST==4), 1, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),0, NA))),
+  
+)
+X<-dat3c %>% select (!response)
+y<-Y$CVDMEDST # y is multiple class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+# the model use CVDMEDST=1 as reference level (basic)
+# e.g., log(P(CVD=2)/P(CVD=1)) = b0+b1x1+b2x2+...
+# e.g., log(P(CVD=3)/P(CVD=1)) = b0+b1x1+b2x2+...
+model<-multinom(y~., data=temp_dat)
+summary(model)$coefficients # model coefficients
+# two tailed z test:
+z<-summary(model)$coefficients/summary(model)$standard.errors
+p<-(1-pnorm(abs(z),0,1))*2 # p value of coefficients
+p # p < 0.05 is significant 
+```
 
 ```{r logisitic regression}
+
+
+# 1. Y=CVDMEDST, multiple classes
+table(temp_dat$CVDMEDST)
+pred<-predict(model, temp_dat)
+table(pred)
+
+temp_dat<-cbind(y1,y2,y3,x)
+temp_dat<-na.omit(temp_dat)
+
+str(temp_dat)
+
+# compare different methods
+glm(y1~.-y2-y3, data=temp_dat, family = multinomial )
+
+model1<-multinom(y1~.-y2-y3, data=temp_dat)
+
+summary(model1)
+# 2-tail z test
+
+
+
+```
+
+### Logistic regression (y= binary)
+
+```{r logisitic regression}
+y<-Y$CVD_cat
 temp_dat<-cbind(y,x)
 temp_dat<-na.omit(temp_dat)
 
@@ -504,7 +1197,7 @@ for (i in 1:k_fold){
   fold_train<-temp_dat[-folds[[i]],] # remaining is training set
   
   n<-nrow(fold_train)  
-  # glm
+  # glm setep
   full_model <-glm(y~., data=temp_dat, family=binomial)
   null_model <-glm(y~1, data=temp_dat, family=binomial)
   model <- step(full_model,k=log(n),trace=0)
@@ -573,33 +1266,30 @@ final_result[(k_fold+1),1]="Average"
 final_result
 
 summary(model)
-
 confusionMatrix(matrix)
+
+
 ```
 
-### Random Forest
+### Classfication Tree
 
 ```{r}
-
-
-
 y<-as.factor(y)
 temp_dat<-cbind(y,x)
-temp_dat<-na.omit(temp_dat)
+# temp_dat<-na.omit(temp_dat)
 str(temp_dat)
 
 # classification tree
 model<-rpart(y~., data=temp_dat,parms = list(split="information"))
 
-
-# 设置cp值
+model
+# set pc
 rpart_cont <- rpart.control(cp=0)
-# 对树的模型设置CP值
+# model
 model <- rpart(y~.,data=temp_dat, 
               control = rpart_cont,
               parms = list(split="information"))
 
-library(flextable)
 df <- data.frame(model$cptable)
 ft <- flextable(df) %>%
   autofit()
@@ -607,19 +1297,28 @@ ft
 cpvals <- model$cptable[,1]
 nsplit <- model$cptable[,2]
 xerror <- model$cptable[,4]
-# 下面这句话是找到cp table中 xerror最小的一行所对应的行号(index)
+# find the index of the min of xerror in cp table
 minpos <- min(seq_along(xerror)[xerror == min(xerror)])     
-rpart.plot(model)
+minpos
 
+model_prune<-prune.rpart(model, cp =0.0017)
+model_prune
+model
+rpart.plot(model_prune)
+```
 
+### Random Forest
+
+```{r}
 # Random forest
+# CVDMEDST
+
 model<-randomForest(
   y~.,
   data=temp_dat,
   num.trees = 500,
   min.node.size = 5,
   mtry=floor((ncol(temp_dat)-1)/3),
-  #mrty=22,
   seed=2021,
   respect.unordered.factors = "order",
 )
@@ -635,7 +1334,9 @@ p1<-vip::vip(model,num_features=10,bar=FALSE)
 p1
 
 library(pdp)
-partial(model, pred.var = c("BMISC","AGEC"), prob=TRUE, plot=TRUE)
+partial(model, pred.var = c("PHDCMHBC","AGEC"), prob=TRUE, plot=TRUE)
+partial(model, pred.var = c("AGEC"), prob=TRUE, plot=TRUE)
+#partial(model, pred.var = c("BMISC"), prob=TRUE, plot=TRUE)
 
 #%>% plotPartial()
 
@@ -643,11 +1344,43 @@ partial(model, pred.var = c("BMISC","AGEC"), prob=TRUE, plot=TRUE)
 
 ```
 
+```{r}
+# Random forest
+model<-randomForest(
+  y~BMISC,
+  data=temp_dat,
+  num.trees = 500,
+  min.node.size = 5,
+  mtry=floor((ncol(temp_dat)-1)/3),
+  seed=2021,
+  respect.unordered.factors = "order",
+)
+
+model
+table(model$y)
+
+library(vip)
+
+
+p1<-vip::vip(model,num_features=10,bar=FALSE)
+
+p1
+
+library(pdp)
+partial(model, pred.var = c("BMISC"), prob=TRUE, plot=TRUE)
+partial(model, pred.var = c("AGEC"), prob=TRUE, plot=TRUE)
+#partial(model, pred.var = c("BMISC"), prob=TRUE, plot=TRUE)
+
+#%>% plotPartial()
+
+#plotPartial(model)
+
+```
 
 ## Model 21
 
-- Y: HCHOLBC = 1,2,3 -> Y=1; HCHOLBC = 5 ->Y=0
-- X: mixture of numerical and recoded categorical
+-   Y: HCHOLBC = 1,2,3 -\> Y=1; HCHOLBC = 5 -\>Y=0
+-   X: mixture of numerical and recoded categorical
 
 ```{r construct x and y}
 response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
@@ -684,9 +1417,8 @@ str(x)
 
 ```
 
-
-
 ### Logistic regression
+
 ```{r}
 repeats<-1
 res1 <- cv_penLogistic(y,x,method="vanilla", repeats=repeats)
@@ -743,15 +1475,12 @@ kable(t(tab))
 
 ```
 
-Above codes show the coefficients of BMISC of many models are close to 0, suggesting BMI may not be a good indicator for predicting high cholesterol. 
-On the other hand, SEX, AGE, PHDCMWBC, DIASTOL, TRIGRESB, LDLRESB, HBA1PREB, GLUCFREB, HDLCHREB, APOBRESB are important predictors for predicting high cholesterol. 
-
-
+Above codes show the coefficients of BMISC of many models are close to 0, suggesting BMI may not be a good indicator for predicting high cholesterol. On the other hand, SEX, AGE, PHDCMWBC, DIASTOL, TRIGRESB, LDLRESB, HBA1PREB, GLUCFREB, HDLCHREB, APOBRESB are important predictors for predicting high cholesterol.
 
 ## Model 22
 
-- Y: 0-1 HCHOLOBC
-- X: numerical and non-recoded categorical variables, do not drop anything further
+-   Y: 0-1 HCHOLOBC
+-   X: numerical and non-recoded categorical variables, do not drop anything further
 
 ```{r}
 response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
@@ -851,7 +1580,8 @@ final_result[(k_fold+1),1]="Average"
 final_result
 ```
 
-### Random Forest 
+### Random Forest
+
 ```{r}
 temp_dat<-cbind(y,x)
 temp_dat$y<-as.factor(as.character(temp_dat$y))
@@ -869,11 +1599,7 @@ model<-ranger(HCHOLBC~.-HSUGBC-HYPBC-DIABBC-CVDMEDST,
 summary(model)
 ```
 
-
-
-
 # Justify
-
 
 ## BMI vs. High cholesterol
 
@@ -926,7 +1652,6 @@ auc(p2) # 0.8765
 
 ```
 
-
 ```{r bmi cho}
 bmi_high <- dat2%>% filter(dat2$BMISC >= 30)
 nrow(bmi_high) # 1658 people high bmi
@@ -935,35 +1660,25 @@ nrow(bmi_low) # 4503 people low bmi
 table(bmi_high$HCHOLBC)
 table(bmi_low$HCHOLBC)
 ```
+
 The claim is: BMI along is not a good indicator to diagnose high cholesterol
 
 Based on BMI, we can see that
 
-- 8.57% of low BMI people have high cholesterol (ideally, the majority of them should NOT have high cholesterol, since they are not in obesity according to BMI)
-- 15.86% of high BMI people have high cholesterol (ideally, the majority of them should have, since they ARE in obesity according to bmi)
+-   8.57% of low BMI people have high cholesterol (ideally, the majority of them should NOT have high cholesterol, since they are not in obesity according to BMI)
+-   15.86% of high BMI people have high cholesterol (ideally, the majority of them should have, since they ARE in obesity according to bmi)
 
-To beat BMI, 
+To beat BMI,
 
+option 1
 
-方案3:
 ```{r}
 
-```
-
-
-方案1:
-```{r}
-
-# 重新group, 把每个predictor分成不同level, 比如 normal, bad, very bad ...
-# 
 str(dat2)
 
 x_regroup <- dat2 %>% mutate(
    
-   age_score<-
-   bmi_score<-
-   对每个 predictor 设置level..
-   .....
+
   
    Tri_score=as.factor(ifelse((TRIGRESB==1|TRIGRESB==2|TRIGRESB==3),0,ifelse((TRIGRESB==4|TRIGRESB==5),1,ifelse(TRIGRESB==97|TRIGRESB==98,NA,2)))),
   
@@ -983,15 +1698,5 @@ x_regroup <- dat2 %>% mutate(
 
 x_predictors <- x %>% select (BMISC, SEX, AGEC, PHDCMWBC, EXLWMBC, EXLWVBC, SYSTOL, DIASTOL, TRIGRESB, LDLRESB, HBA1PREB, GLUCFREB, HDLCHREB, APOBRESB)
 }
-
-# 根据X regroup, 对于每个人, SUMMATION[每个predictor的分数 × predictor在回归模型的系数]-> 给每个人算出一个obesity score
-....
-# 再给obesity score 找一个threshold 
-# 目标是 对于>threshold (肥胖人群), 高胆固醇发病率>15.86% 
-# <threshold 人群, 高胆固醇发病率 < 8.57%
-
-```
-方案2:
-直接使用 回归模型的Cross validation结果. 如logistic regression的model 1的错误率是15%, 则说明有15%的人被误判, 和BMI结果对比发现, 高BMI人群 有100%-15.86%的人没有得病: 即 若根据 BMI>30 -> high cholesterol = 1 来判断, 则相当于有接近85%的人会被误判
 
 
