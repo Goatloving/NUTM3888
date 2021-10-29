@@ -1,3 +1,9 @@
+
+normalization_df_without_y(x){
+  x_std<-mutate_if(is.numeric, list(mystd))
+  return (x_std)
+}
+
 mystd <-function (x){
   x<- (x-mean(x, na.rm=TRUE))/sd(x, na.rm=TRUE)
 }

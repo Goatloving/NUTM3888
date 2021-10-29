@@ -11,7 +11,7 @@ output:
 # Setup
 
 ```{r setup, include=FALSE}
-source('myfunc.R') # self-defiend functions
+source('myfunc.R') # self-defined functions
 library(tidyverse)
 library(tidyr)     # new tidy functions
 library(knitr) # kable
@@ -41,13 +41,12 @@ library(pROC)
 library(flextable)
 library(nnet)
 library(VGAM) # vglm multiple class logisitic regression
-
+library(MASS)
 ```
 
 # Todo
 
--   Random forest on Model 31 (y=binary) still problematic
--   
+   
 
 # Dataset
 
@@ -55,13 +54,61 @@ library(VGAM) # vglm multiple class logisitic regression
 load("tech_data.Rdata")
 ```
 
+## dat6 (biom+nutr(with nutrients intake from food))
+
+```{r}
+dat<-cbind(tech_biom, tech_nutr)
+predictor_list<-c("BMR","GRAINS1N","WHOLGR1N","REFGRA1N","VEGLEG1N","GREENS1N","VGORSV1N","STARCH1N","LEGVEG1N","FRSHF1N","FRUIT1N","DRFR1N","FRJUIC1N","DAIRY1N","DAIRHF1N","DAIRHF1N","DAIRMF1N","DAIRLF1N","ALCT1","ALCT2","CAFFT1","CAFFT2","RDMTL1N","RDMTLU1N","RDMTLP1N","RDMTN1N","RDMTNU1N","RDMTNP1N","PLTYL1N","PLTYLU1N","FISH1N","EGGS1N","LEGMT1N","NUTS1N","WATER1N","PHDKGWBC","PHDCMHBC","SLPTIME","DIETRDI","SEX","AGEC","PHDCMWBC","EXLWMBC","EXLWVBC", "OTHVEG1N","SYSTOL","DIASTOL","CVDMEDST","SMKSTAT","TRANST1","TRANST2","MEAT1N","MEATL1N","MEATLD1N")
+
+dat6<-dat%>% select(predictor_list)
+
+remove_list<-c("MEAT1N", "MEATL1N","MEATLD1N", "RDMTLU1N", "RDMTLP1N", "RDMTN1N", "RDMTNU1N", "RDMTNP1N", "PLTYL1N", "PLTYLU1N", "WHOLGR1N", "REFGRA1N", "GRAINS1N", "VEGLEG1N", "GREENS1N", "VGORSV1N", "STARCH1N", "LEGVEG1N","OTHVEG1N", "FRSHF1N", "FRUIT1N", "DAIRY1N", "DAIRHF1N","DAIRHF1N", "DAIRMF1N","DAIRLF1N","CAFFT1","CAFFT2","ALCT1","ALCT2","TRANST1","TRANST2")
+
+dat6<-dat6%>%mutate(
+  
+  EXLWMBC = as.numeric(as.character(EXLWMBC)),
+  
+  EXLWVBC = as.numeric(as.character(EXLWVBC)),
+  
+  MEAT= MEAT1N + MEATL1N+MEATLD1N  +  RDMTL1N  + RDMTLU1N  + RDMTLP1N  + RDMTN1N  + RDMTNU1N  + RDMTNP1N  + PLTYL1N  + PLTYLU1N,
+  
+  GRAIN= WHOLGR1N  + REFGRA1N  + GRAINS1N ,
+  
+  VEGET= VEGLEG1N  + GREENS1N  + VGORSV1N  + STARCH1N  + LEGVEG1N  + OTHVEG1N ,
+  
+  FRUIT= FRSHF1N  + FRUIT1N,
+  
+  DAIRY= DAIRY1N  + DAIRHF1N  + DAIRHF1N  + DAIRMF1N  + DAIRLF1N,
+  
+  AVG_CAFF= (CAFFT1+CAFFT2)/2,
+  
+  AVG_ALCT = (ALCT1+ALCT2)/2,
+  
+  AVG_TRANST = (TRANST1+TRANST2)/2
+)
+
+
+dat6<-dat6%>% select(!remove_list)
+
+
+dat6<-dat6%>%  filter(AGEC>=19, AGEC<=64) 
+
+
+str(dat6)
+
+dat6c<-na.omit(dat6)
+
+```
+
+
+
 ## dat5 (biom+nutr datasets combined)
 
 contains CVDMEDST (the only diease) and other predictors
 
 ```{r}
 dat<-cbind(tech_biom, tech_nutr)
-predictor_list<-c("BMR","FATT1","FATT2","MOISTT1","MOISTT2","PROPER1","PROPER2","SUGPER1","SUGPER2","ALCT1","ALCT2","B1T1","B1T2","B2T1","B2T2", "B3T1","B3T2","B6T1","B6T2","B12T1","B12T2","CAFFT1","CAFFT2","FATPER1","FATPER2","TRANPER1","TRANPER2","MONOPER1","MONOPER2","POLYPER1","POLYPER2","WATERG1N","WATERG2N","PHDKGWBC","PHDCMHBC","SLPTIME","DIETRDI","DIETQ5","DIETQ8","SEX","AGEC","PHDCMWBC","EXLWMBC","EXLWVBC", "SYSTOL","DIASTOL","CVDMEDST","SMKSTAT",)
+predictor_list<-c("BMR","FATT1","FATT2","MOISTT1","MOISTT2","PROPER1","PROPER2","SUGPER1","SUGPER2","ALCT1","ALCT2","B1T1","B1T2","B2T1","B2T2","B3T1","B3T2","B6T1","B6T2","B12T1","B12T2","CAFFT1","CAFFT2","FATPER1","FATPER2","TRANPER1","TRANPER2","MONOPER1","MONOPER2","POLYPER1","POLYPER2","WATERG1N","WATERG2N","PHDKGWBC","PHDCMHBC","SLPTIME","DIETRDI","DIETQ5","DIETQ8","SEX","AGEC","PHDCMWBC","EXLWMBC","EXLWVBC", "SYSTOL","DIASTOL","CVDMEDST","SMKSTAT")
 
 #response<-c("DIABBC","HCHOLBC","HSUGBC","HYPBC","CVDMEDST")
 
@@ -114,6 +161,9 @@ avg<-dat4%>%select(contains("AVG_"))
 predict2<-dat4%>%select(predictor_list2)
 predict2
 dat5<-cbind(predict2,avg)
+
+
+
 dat5$EXLWMBC<-as.numeric(as.character(dat5$EXLWMBC)) # exerices time should be numeric 
 dat5$EXLWVBC<-as.numeric(as.character(dat5$EXLWVBC)) # exerciese time should be numeric
 str(dat5)
@@ -179,11 +229,541 @@ dat2c
 
 ```
 
+# EDA
+
+## Summary statisitcs
+
+### Dataset 5
+```{r}
+library(summarytools)
+
+
+
+
+print(dfSummary(dat5c,
+      style='grid',
+      type='html',
+      plain.ascii=FALSE,
+      graph.magnif=0.85),
+method='render'
+      )
+          
+```
+
+
 # Models
+
+## Model 61 (CVDMEDST)
+
+### [611]
+
+#### [6111] rfe feature selection
+
+```{r}
+str(dat6c)
+
+###### dataset construction ######
+response<-c("CVDMEDST")
+Y<-dat6c %>% select (response) %>% mutate(
+  CVD_cat = as.factor(ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA))),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  
+)
+
+str(Y)
+X<-dat6c %>% select (!response)
+y<-Y$CVD_cat # y is binary class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+table(y)
+str(temp_dat)
+###### dataset construction ######
+
+control.rf<-rfeControl(
+  functions = rfFuncs, # random forest
+  method = 'cv',
+  number = 5
+)
+
+results.rfe.rf<-rfe(temp_dat[,-1], # x, predictors
+             temp_dat[,1], # y
+             sizes = c(1:31), # how many features should be kept
+             rfeControl = control.rf
+        
+)
+
+p.rfe.rf<-ggplot(data = results.rfe.rf, aes(x=results$Variables, y=results$Accuracy))+
+  geom_point()+
+  geom_line()
+
+p.rfe.rf
+results.rfe.rf
+```
+
+
+#### [6112] mixture methods
+
+```{r}
+###### dataset construction ######
+response<-c("CVDMEDST")
+Y<-dat6c %>% select (response) %>% mutate(
+  CVD_cat = as.numeric(ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA))),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  
+)
+
+str(Y)
+X<-dat6c %>% select (!response)
+y<-Y$CVD_cat # y is binary class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+table(y)
+str(temp_dat)
+###### dataset construction ######
+
+
+
+
+k_fold = 2
+folds<-createFolds(y=temp_dat[,1],k=k_fold)
+
+
+index = 1
+model.list<-list()
+model.name.list<-list()
+performance.list<-list()
+hyper.list<-list()
+temp_dat<-droplevels(temp_dat)
+
+r<-1
+for (i in 1:k_fold){
+  fold_test<-temp_dat[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-temp_dat[-folds[[i]],] # remaining is training set
+  
+  n<-nrow(fold_train)
+  
+  # logistic regression
+  model.lr<-glm(y~., family=binomial, data=fold_train)
+  pred.lr<-predict(model.lr, fold_test, type="response") # predict classfication
+  class.lr<-round(pred.lr)
+  t<-table(class.lr, fold_test$y)[2:1,2:1] # confusion table
+  f1.lr<-calculate_f1(t)
+  auc.lr<-roc(fold_test$y, pred.lr)$auc # calculate AUC
+  err.lr<-mean(as.numeric(class.lr!= fold_test$y)) # error rate
+  ## record results
+  model.name.list[[index]] = c(index, r, i, "plain")
+  model.list[[index]] = model.lr
+  performance.list[[index]]=c(err.lr, f1.lr, auc.lr)
+  index=index+1
+
+
+  # full model vs. null model
+  model.lr.full<-glm(y~., data=fold_train, family = binomial)
+  model.lr.null<-glm(y~1, data=fold_train, family = binomial)
+
+  # aic forward
+  model<-step(model.lr.null, scope=list(lower=model.lr.null, upper=model.lr.full), k=2, trace =0)
+  pred<-predict(model, fold_test, type="response")
+  class<-round(pred)
+  t<-table(class, fold_test$y)[2:1, 2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "aicfwd")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+  # bic forward
+  model<-step(model.lr.null, scope=list(lower=model.lr.null, upper=model.lr.full), k=log(n), trace =0)
+  pred<-predict(model, fold_test, type="response")
+  class<-round(pred)
+  t<-table(class, fold_test$y)[2:1, 2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "bicfwd")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+  # aic backward
+  model<-step(model.lr.full, k=2, trace=0, data=fold_train)
+  pred<-predict(model, fold_test, type="response")
+  class<-round(pred)
+  t<-table(class, fold_test$y)[2:1, 2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "aicbwd")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+  # bic backward
+  model<-step(model.lr.full, k=log(n), trace=0, data=fold_train)
+  pred<-predict(model, fold_test, type="response")
+  class<-round(pred)
+  t<-table(class, fold_test$y)[2:1, 2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "aicbwd")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+  # ridge regression
+  model<-cv.glmnet(data.matrix(fold_train[,-1]), fold_train$y, alpha = 0, family = "binomial")
+  pred<-predict(model, newx=data.matrix(fold_test[,-1]), s="lambda.1se")
+  testprob <- 1/(1+exp(-pred))
+  class<-round(testprob)
+  t<-table(class, fold_test$y)
+  if (nrow(t)<2){
+    t<-rbind(t,c(0,0))
+  }
+  t<-t[2:1,2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "ridge")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+
+  # lasso regression
+  model<-cv.glmnet(data.matrix(fold_train[,-1]), fold_train$y, alpha = 1, family = "binomial")
+  pred<-predict(model, newx=data.matrix(fold_test[,-1]), s="lambda.1se")
+  testprob <- 1/(1+exp(-pred))
+  class<-round(testprob)
+  t<-table(class, fold_test$y)
+  if (nrow(t)<2){
+    t<-rbind(t,c(0,0))
+  }
+  t<-t[2:1,2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "lasso")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+  # firth regression
+
+  model<-brglm(y~., data=fold_train)
+  pred<-predict(model, fold_test)
+  class<-round(pred)
+  t<-table(class, fold_test$y)
+  if (nrow(t)<2){
+    t<-rbind(t,c(0,0))
+  }
+  t<-t[2:1,2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "firth")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+  # random forest
+  grid.rf <- list(ntrees = seq(300, 500, by = 50),
+                   mtries = seq(3, 5, by = 1)
+              )
+  for (a in 1: length(grid.rf$ntrees)){
+    for (b in 1:length(grid.rf$mtries)){
+         model<-randomForest(
+            y~., # assume these 5 variables are selected by above rfe()
+            data=fold_train,
+            num.trees=grid.rf$ntrees[a],
+            min.node.size=5,
+            mtry = grid.rf$mtries[b],
+            seed=2021,
+            respect.unordered.factors='order',
+         )
+        pred<-predict(model, fold_test, type="response") # numeric predicted values
+        class<-round(pred)
+        t<-table(class, fold_test$y)
+        if (nrow(t)<2){
+          t<-rbind(t,c(0,0))
+        }
+        t<-t[2:1,2:1]
+        f1<-calculate_f1(t)
+        auc<-roc(fold_test$y, class)$auc
+        err<-mean(as.numeric(class!=fold_test$y))
+        ## record results
+        model.name.list[[index]]=c(index, r, i, "rf")
+        model.list[[index]]=model
+        performance.list[[index]]=c(err,f1,auc)
+        hyper.list[[index]]=c(grid.rf$ntrees[a],grid.rf$mtries[b])
+        index=index+1
+
+      }
+    }
+
+  #neural network
+  # training set
+  
+  
+  ### normalization
+  fold_train_x<-fold_train[,-1]
+  fold_train_x_std<- fold_train_x %>% mutate_if(is.numeric, list(mystd))
+  ### one hot encoding
+  fold_train_x_std_nn<-one_hot(as.data.table(fold_train_x_std))
+  y<-as.factor(fold_train$y)
+  fold_train_std_nn<-cbind(y, fold_train_x_std_nn)
+  
+  # testing set
+  ### normalization
+  fold_test_x<-fold_test[,-1]
+  fold_test_x_std<- fold_test_x %>% mutate_if(is.numeric, list(mystd))
+  ### one hot encoding
+  fold_test_x_std_nn<-one_hot(as.data.table(fold_test_x_std))
+  y<-as.factor(fold_test$y)
+  fold_test_std_nn<-cbind(y, fold_test_x_std_nn)
+
+  
+  # grid
+  grid.nn <- list(hidden_layer = c(1),
+                  each_layer = c(5)
+              )
+
+  for (a in 1:length(grid.nn$hidden_layer)){
+    for (b in 1:length(grid.nn$each_layer)){
+      # generate hidden layer vector
+      hid_vec<-as.vector(matrix(grid.nn$each_layer[b],nrow = grid.nn$hidden_layer[a], ncol=1))
+      # train model:
+      model<-neuralnet(y~., data=fold_train_std_nn, hidden=hid_vec, stepmax=1e7)
+      pred<-predict(model, fold_test_std_nn)
+      class<-as.numeric(pred[,1]>pred[,2]) # pred[,1] is for y=1, pred[,2] for y=0
+      t<-table(class, fold_test_std_nn$y)
+      f1<-calculate_f1(t)
+      auc<-roc(fold_test$y, class)$auc
+      err<-mean(as.numeric(class!=fold_test$y))
+      ## record results
+      model.name.list[[index]]=c(index, r, i, "nn")
+      model.list[[index]]=model
+      performance.list[[index]]=c(err,f1,auc)
+      hyper.list[[index]]=c(grid.nn$hidden_layer[a], grid.nn$each_layer[b])
+      index=index+1      
+      
+    }
+  }
+
+  
+  
+  # SVM
+  grid.svm<-list(
+    c_val=c(1),
+    coef0=c(1),
+    gamma=c(1),
+    degree=c(3)
+  )
+  
+  fold_test_svm<-fold_test%>%mutate(
+    y=as.factor(y)
+  )
+  fold_train_svm<-fold_train%>%mutate(
+    y=as.factor(y)
+  )
+  
+  for (a in 1:length(grid.svm$c_val)){
+    for (b in 1:length(grid.svm$coef0)){
+      for (c in 1:length(grid.svm$gamma)){
+        for (d in 1:length(grid.svm$degree)){
+          
+          # linear SVM
+          model <-svm(y~., data=fold_train_svm, cost=grid.svm$c_val[1], kernel="linear")
+          pred<-predict(model, fold_test_svm)
+
+          t<-table(pred, fold_test$y)
+          if (nrow(t)<2){
+            t<-rbind(t,c(0,0))
+          }
+          t<-t[2:1,2:1]
+          f1<-calculate_f1(t)
+          auc<-roc(fold_test$y, class)$auc
+          err<-mean(as.numeric(class!=fold_test$y))
+          ## record results
+          model.name.list[[index]]=c(index, r, i, "svm_lnr")
+          model.list[[index]]=model
+          performance.list[[index]]=c(err,f1,auc)
+          hyper.list[[index]]=c(grid.svm$c_val[a])
+          index=index+1
+          
+          
+          # radial SVM
+          model <-svm(y~., data=fold_train_svm, cost=grid.svm$c_val[1], kernel="radial", 
+                      gamma=grid.svm$gamma[1])
+          pred<-predict(model, fold_test_svm)
+
+          t<-table(pred, fold_test$y)
+          if (nrow(t)<2){
+            t<-rbind(t,c(0,0))
+          }
+          t<-t[2:1,2:1]
+          f1<-calculate_f1(t)
+          auc<-roc(fold_test$y, as.numeric(pred))$auc
+          err<-mean(as.numeric(pred!=fold_test$y))
+          ## record results
+          model.name.list[[index]]=c(index, r, i, "svm_rad")
+          model.list[[index]]=model
+          performance.list[[index]]=c(err,f1,auc)
+          hyper.list[[index]]=c(grid.svm$c_val[a], grid.svm$gamma[c])
+          index=index+1
+          
+          # polynomial SVM
+           model <-svm(y~., data=fold_train_svm, cost=grid.svm$c_val[1], kernel="polynomial", 
+                       gamma=grid.svm$gamma[1],coef0=grid.svm$coef0[1], degree=grid.svm$degree[1])
+          pred<-predict(model, fold_test_svm)
+          
+          t<-table(pred, fold_test$y)
+          if (nrow(t)<2){
+            t<-rbind(t,c(0,0))
+          }
+          t<-t[2:1,2:1]
+          f1<-calculate_f1(t)
+          auc<-roc(fold_test$y, as.numeric(pred))$auc
+          err<-mean(as.numeric(pred!=fold_test$y))
+          ## record results
+          model.name.list[[index]]=c(index, r, i, "svm_poly")
+          model.list[[index]]=model
+          performance.list[[index]]=c(err,f1,auc)
+          hyper.list[[index]]=c(grid.svm$c_val[a],grid.svm$coef0[b], grid.svm$gamma[c], grid.svm$degree[d])
+          index=index+1
+          
+            
+        }
+      }
+    }
+  }
+
+  
+  
+  # linear regression
+  # model <- lm(y~., data=fold_train)
+  
+  # classification tree using gini
+  model <- rpart(y~., 
+                data=fold_train,
+                parms=list(split="gini"))
+  
+  
+  pred<-predict(model, fold_test)  
+  
+  class<-round(pred)
+        t<-table(class, fold_test$y)
+        if (nrow(t)<2){
+          t<-rbind(t,c(0,0))
+        }
+        t<-t[2:1,2:1]
+        f1<-calculate_f1(t)
+        auc<-roc(fold_test$y, class)$auc
+        err<-mean(as.numeric(class!=fold_test$y))
+        ## record results
+        model.name.list[[index]]=c(index, r, i, "cls_tre_gini")
+        model.list[[index]]=model
+        performance.list[[index]]=c(err,f1,auc)
+        #hyper.list[[index]]=c(grid.rf$ntrees[a],grid.rf$mtries[b])
+        index=index+1
+
+        
+        
+  # classification tree using information 
+  model <- rpart(y~., 
+                data=fold_train,
+                parms=list(split="information"))
+  
+  
+  pred<-predict(model, fold_test)  
+  
+  class<-round(pred)
+        t<-table(class, fold_test$y)
+        if (nrow(t)<2){
+          t<-rbind(t,c(0,0))
+        }
+        t<-t[2:1,2:1]
+        f1<-calculate_f1(t)
+        auc<-roc(fold_test$y, class)$auc
+        err<-mean(as.numeric(class!=fold_test$y))
+        ## record results
+        model.name.list[[index]]=c(index, r, i, "cls_tre_info")
+        model.list[[index]]=model
+        performance.list[[index]]=c(err,f1,auc)
+        #hyper.list[[index]]=c(grid.rf$ntrees[a],grid.rf$mtries[b])
+        index=index+1
+
+        
+  # # lda
+  # 
+  #       model <- lda(y~., data=fold_train)
+  #       pred<-predict(model, fold_test)
+  #       pred
+  #       class<-round(as.numeric(pred))
+  #       t<-table(class, fold_test$y)
+  #       if (nrow(t)<2){
+  #         t<-rbind(t,c(0,0))
+  #       }
+  #       t<-t[2:1,2:1]
+  #       f1<-calculate_f1(t)
+  #       auc<-roc(fold_test$y, class)$auc
+  #       err<-mean(as.numeric(class!=fold_test$y))
+  #       ## record results
+  #       model.name.list[[index]]=c(index, r, i, "cls_tre_info")
+  #       model.list[[index]]=model
+  #       performance.list[[index]]=c(err,f1,auc)
+  #       #hyper.list[[index]]=c(grid.rf$ntrees[a],grid.rf$mtries[b])
+  #       index=index+1
+  # qda
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+}
+
+# generate table to present results
+results<-cbind(model.name.list, model.list, performance.list) # store all results
+final.table<-data.frame() # used for exhibition 
+for (i in 1:nrow(results)){
+  col1<-t(model.name.list[[i]]) # model name list
+  col2<-t(performance.list[[i]]) # performance list
+  row<-cbind(col1,col2)
+  final.table<-rbind(final.table,row)
+}
+names(final.table)<-c("index","repeats","fold", "model","err","f1","auc")
+final.table$err<-round(as.numeric(as.character(final.table$err)),digits=3)
+final.table$f1<-round(as.numeric(as.character(final.table$f1)),digits=3)
+final.table$auc<-round(as.numeric(as.character(final.table$auc)),digits=3)
+final.table$model<-as.character(final.table$model)
+final.table$`fold`<-as.numeric(as.character(final.table$`fold`))
+final.table$`repeats`<-as.numeric(as.character(final.table$`repeats`))
+final.table$index<-as.numeric(as.character(final.table$index))
+final.table
+
+
+good.models<-final.table%>%filter(err<0.35, auc>0.65)
+good.models
+
+```
 
 ## Model 51(CVDMEDST)
 
 ### [511] y=numerical CVD
+
 
 #### [5111] Step selection logistic regression
 
@@ -291,17 +871,71 @@ control<-rfeControl(
   number = 10
 )
 
-temp_dat
+#ncol(temp_dat)
 results<-rfe(temp_dat[,-1], # x, predictors
              temp_dat[,1], # y
-             sizes = c(1:5), # how many features should be kept
+             sizes = c(1:31), # how many features should be kept
              rfeControl = control
         
 )
 
 
+results$results
+
+
+##########################
+# K-fold CV
+k_fold = 10
+folds<-createFolds(y=temp_dat[,1],k=k_fold)
+# create matrix to record results during k-fold cv
+# hyper parameters grid search 
+hyper_grid <- list(ntrees = seq(300, 500, by = 50),
+                   mtries = seq(3, 5, by = 1)
+              )
+
+# record results in each k-th CV
+model_list=list() # list to store the model
+parameter_list=list() # list to store the hyperparameter
+performance_list=list() # list to store performance indicator such as accuracy
+index = 1; # index used for storing results
+
+# k-fold CV for training:
+for (i in 1:k_fold){
+  fold_test<-temp_dat[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-temp_dat[-folds[[i]],] # remaining is training set
+  # train random forest model in k-th CV loop
+  for (a in 1: length(hyper_grid$ntrees)){
+    for (b in 1:length(hyper_grid$mtries)){
+         model_rfe <-randomForest(
+            y~AGEC+DIASTOL+PHDCMWBC+PHDKGWBC+BMR, # assume these 5 variables are selected by above rfe()
+            data=fold_test,
+            num.trees=hyper_grid$ntrees[a],
+            min.node.size=5,
+            mtry = hyper_grid$mtries[b],
+            seed=2021,
+            respect.unordered.factors='order',
+         )
+        pred<-predict(model_rfe, fold_test, type="response") # numeric predicted values
+        ## record some results for the k-th CV loop here: 
+        ## ....
+        model_list[[index]] = model_rfe
+        parameter_list[[index]] =c(i, hyper_grid$ntrees[a], hyper_grid$mtries[b])
+        index=index+1
+      }
+    }
+}
+##########################
+
+
+
+
+#######################
+
+
 results
+
 (floor(ncol(temp_dat)-1)/3)
+
 
 model_rfe <-randomForest(
   y~AGEC+DIASTOL+PHDCMWBC+PHDKGWBC+BMR,
@@ -387,6 +1021,509 @@ for (i in 1:5){
   print(pics.5112[[i]])  
 }
 
+results$optVariables
+
+```
+
+#### [5113] mixture methods
+
+```{r}
+###### dataset construction ######
+response<-c("CVDMEDST")
+Y<-dat5c %>% select (response) %>% mutate(
+  CVD_cat = as.numeric(ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA))),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  
+)
+
+str(Y)
+X<-dat5c %>% select (!response)
+y<-Y$CVD_cat # y is binary class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+table(y)
+str(temp_dat)
+###### dataset construction ######
+
+
+
+
+k_fold = 2
+folds<-createFolds(y=temp_dat[,1],k=k_fold)
+
+
+index = 1
+model.list<-list()
+model.name.list<-list()
+performance.list<-list()
+hyper.list<-list()
+temp_dat<-droplevels(temp_dat)
+
+r<-1
+for (i in 1:k_fold){
+  fold_test<-temp_dat[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-temp_dat[-folds[[i]],] # remaining is training set
+  
+  n<-nrow(fold_train)
+  
+  # # logistic regression
+  # model.lr<-glm(y~., family=binomial, data=fold_train)
+  # pred.lr<-predict(model.lr, fold_test, type="response") # predict classfication 
+  # class.lr<-round(pred.lr)
+  # t<-table(class.lr, fold_test$y)[2:1,2:1] # confusion table
+  # f1.lr<-calculate_f1(t)
+  # auc.lr<-roc(fold_test$y, pred.lr)$auc # calculate AUC 
+  # err.lr<-mean(as.numeric(class.lr!= fold_test$y)) # error rate
+  # ## record results
+  # model.name.list[[index]] = c(index, r, i, "plain")
+  # model.list[[index]] = model.lr
+  # performance.list[[index]]=c(err.lr, f1.lr, auc.lr)
+  # index=index+1
+  # 
+  # 
+  # # full model vs. null model
+  # model.lr.full<-glm(y~., data=fold_train, family = binomial)
+  # model.lr.null<-glm(y~1, data=fold_train, family = binomial)
+  # 
+  # # aic forward
+  # model<-step(model.lr.null, scope=list(lower=model.lr.null, upper=model.lr.full), k=2, trace =0)
+  # pred<-predict(model, fold_test, type="response")
+  # class<-round(pred)
+  # t<-table(class, fold_test$y)[2:1, 2:1]
+  # f1<-calculate_f1(t)
+  # auc<-roc(fold_test$y, pred)$auc
+  # err<-mean(as.numeric(class!=fold_test$y))
+  # ## record results
+  # model.name.list[[index]]=c(index, r, i, "aicfwd")
+  # model.list[[index]]=model
+  # performance.list[[index]]=c(err,f1,auc)
+  # index=index+1
+  # 
+  # # bic forward
+  # model<-step(model.lr.null, scope=list(lower=model.lr.null, upper=model.lr.full), k=log(n), trace =0)
+  # pred<-predict(model, fold_test, type="response")
+  # class<-round(pred)
+  # t<-table(class, fold_test$y)[2:1, 2:1]
+  # f1<-calculate_f1(t)
+  # auc<-roc(fold_test$y, pred)$auc
+  # err<-mean(as.numeric(class!=fold_test$y))
+  # ## record results
+  # model.name.list[[index]]=c(index, r, i, "bicfwd")
+  # model.list[[index]]=model
+  # performance.list[[index]]=c(err,f1,auc)
+  # index=index+1
+  # 
+  # # aic backward
+  # model<-step(model.lr.full, k=2, trace=0, data=fold_train)
+  # pred<-predict(model, fold_test, type="response")
+  # class<-round(pred)
+  # t<-table(class, fold_test$y)[2:1, 2:1]
+  # f1<-calculate_f1(t)
+  # auc<-roc(fold_test$y, pred)$auc
+  # err<-mean(as.numeric(class!=fold_test$y))
+  # ## record results
+  # model.name.list[[index]]=c(index, r, i, "aicbwd")
+  # model.list[[index]]=model
+  # performance.list[[index]]=c(err,f1,auc)
+  # index=index+1
+  # 
+  # # bic backward
+  # model<-step(model.lr.full, k=log(n), trace=0, data=fold_train)
+  # pred<-predict(model, fold_test, type="response")
+  # class<-round(pred)
+  # t<-table(class, fold_test$y)[2:1, 2:1]
+  # f1<-calculate_f1(t)
+  # auc<-roc(fold_test$y, pred)$auc
+  # err<-mean(as.numeric(class!=fold_test$y))
+  # ## record results
+  # model.name.list[[index]]=c(index, r, i, "aicbwd")
+  # model.list[[index]]=model
+  # performance.list[[index]]=c(err,f1,auc)
+  # index=index+1
+  # 
+  # # ridge regression 
+  # model<-cv.glmnet(data.matrix(fold_train[,-1]), fold_train$y, alpha = 0, family = "binomial")
+  # pred<-predict(model, newx=data.matrix(fold_test[,-1]), s="lambda.1se")
+  # testprob <- 1/(1+exp(-pred))
+  # class<-round(testprob)
+  # t<-table(class, fold_test$y)
+  # if (nrow(t)<2){
+  #   t<-rbind(t,c(0,0))
+  # }
+  # t<-t[2:1,2:1]
+  # f1<-calculate_f1(t)
+  # auc<-roc(fold_test$y, pred)$auc
+  # err<-mean(as.numeric(class!=fold_test$y))
+  # ## record results
+  # model.name.list[[index]]=c(index, r, i, "ridge")
+  # model.list[[index]]=model
+  # performance.list[[index]]=c(err,f1,auc)
+  # index=index+1
+  # 
+  # 
+  # # lasso regression 
+  # model<-cv.glmnet(data.matrix(fold_train[,-1]), fold_train$y, alpha = 1, family = "binomial")
+  # pred<-predict(model, newx=data.matrix(fold_test[,-1]), s="lambda.1se")
+  # testprob <- 1/(1+exp(-pred))
+  # class<-round(testprob)
+  # t<-table(class, fold_test$y)
+  # if (nrow(t)<2){
+  #   t<-rbind(t,c(0,0))
+  # }
+  # t<-t[2:1,2:1]
+  # f1<-calculate_f1(t)
+  # auc<-roc(fold_test$y, pred)$auc
+  # err<-mean(as.numeric(class!=fold_test$y))
+  # ## record results
+  # model.name.list[[index]]=c(index, r, i, "lasso")
+  # model.list[[index]]=model
+  # performance.list[[index]]=c(err,f1,auc)
+  # index=index+1
+  # 
+  # # firth regression
+  # 
+  # model<-brglm(y~., data=fold_train)
+  # pred<-predict(model, fold_test)
+  # class<-round(pred)
+  # t<-table(class, fold_test$y)
+  # if (nrow(t)<2){
+  #   t<-rbind(t,c(0,0))
+  # }
+  # t<-t[2:1,2:1]
+  # f1<-calculate_f1(t)
+  # auc<-roc(fold_test$y, pred)$auc
+  # err<-mean(as.numeric(class!=fold_test$y))
+  # ## record results
+  # model.name.list[[index]]=c(index, r, i, "firth")
+  # model.list[[index]]=model
+  # performance.list[[index]]=c(err,f1,auc)
+  # index=index+1
+  # 
+  # # random forest
+  # grid.rf <- list(ntrees = seq(300, 500, by = 50),
+  #                  mtries = seq(3, 5, by = 1)
+  #             )
+  # for (a in 1: length(grid.rf$ntrees)){
+  #   for (b in 1:length(grid.rf$mtries)){
+  #        model<-randomForest(
+  #           y~., # assume these 5 variables are selected by above rfe()
+  #           data=fold_train,
+  #           num.trees=grid.rf$ntrees[a],
+  #           min.node.size=5,
+  #           mtry = grid.rf$mtries[b],
+  #           seed=2021,
+  #           respect.unordered.factors='order',
+  #        )
+  #       pred<-predict(model, fold_test, type="response") # numeric predicted values
+  #       class<-round(pred)
+  #       t<-table(class, fold_test$y)
+  #       if (nrow(t)<2){
+  #         t<-rbind(t,c(0,0))
+  #       }
+  #       t<-t[2:1,2:1]
+  #       f1<-calculate_f1(t)
+  #       auc<-roc(fold_test$y, class)$auc
+  #       err<-mean(as.numeric(class!=fold_test$y))
+  #       ## record results
+  #       model.name.list[[index]]=c(index, r, i, "rf")
+  #       model.list[[index]]=model
+  #       performance.list[[index]]=c(err,f1,auc)
+  #       hyper.list[[index]]=c(grid.rf$ntrees[a],grid.rf$mtries[b])
+  #       index=index+1
+  #                     
+  #     }
+  #   }
+  # 
+  #neural network
+  ## training set
+  
+  
+  ### normalization
+  fold_train_x<-fold_train[,-1]
+  fold_train_x_std<- fold_train_x %>% mutate_if(is.numeric, list(mystd))
+  ### one hot encoding
+  fold_train_x_std_nn<-one_hot(as.data.table(fold_train_x_std))
+  y<-as.factor(fold_train$y)
+  fold_train_std_nn<-cbind(y, fold_train_x_std_nn)
+  
+  # testing set
+  ### normalization
+  fold_test_x<-fold_test[,-1]
+  fold_test_x_std<- fold_test_x %>% mutate_if(is.numeric, list(mystd))
+  ### one hot encoding
+  fold_test_x_std_nn<-one_hot(as.data.table(fold_test_x_std))
+  y<-as.factor(fold_test$y)
+  fold_test_std_nn<-cbind(y, fold_test_x_std_nn)
+
+  
+  # grid
+  grid.nn <- list(hidden_layer = c(1),
+                  each_layer = c(5)
+              )
+
+  for (a in 1:length(grid.nn$hidden_layer)){
+    for (b in 1:length(grid.nn$each_layer)){
+      # generate hidden layer vector
+      hid_vec<-as.vector(matrix(grid.nn$each_layer[b],nrow = grid.nn$hidden_layer[a], ncol=1))
+      # train model:
+      model<-neuralnet(y~., data=fold_train_std_nn, hidden=hid_vec, stepmax=1e7)
+      pred<-predict(model, fold_test_std_nn)
+      class<-as.numeric(pred[,1]>pred[,2]) # pred[,1] is for y=1, pred[,2] for y=0
+      t<-table(class, fold_test_std_nn$y)
+      f1<-calculate_f1(t)
+      auc<-roc(fold_test$y, class)$auc
+      err<-mean(as.numeric(class!=fold_test$y))
+      ## record results
+      model.name.list[[index]]=c(index, r, i, "nn")
+      model.list[[index]]=model
+      performance.list[[index]]=c(err,f1,auc)
+      hyper.list[[index]]=c(grid.nn$hidden_layer[a], grid.nn$each_layer[b])
+      index=index+1      
+      
+    }
+  }
+
+  
+  
+  # SVM
+  grid.svm<-list(
+    c_val=c(1),
+    coef0=c(1),
+    gamma=c(1),
+    degree=c(3)
+  )
+  
+  fold_test_svm<-fold_test%>%mutate(
+    y=as.factor(y)
+  )
+  fold_train_svm<-fold_train%>%mutate(
+    y=as.factor(y)
+  )
+  
+  for (a in 1:length(grid.svm$c_val)){
+    for (b in 1:length(grid.svm$coef0)){
+      for (c in 1:length(grid.svm$gamma)){
+        for (d in 1:length(grid.svm$degree)){
+          
+          # linear SVM
+          model <-svm(y~., data=fold_train_svm, cost=grid.svm$c_val[1], kernel="linear")
+          pred<-predict(model, fold_test_svm)
+
+          t<-table(pred, fold_test$y)
+          if (nrow(t)<2){
+            t<-rbind(t,c(0,0))
+          }
+          t<-t[2:1,2:1]
+          f1<-calculate_f1(t)
+          auc<-roc(fold_test$y, class)$auc
+          err<-mean(as.numeric(class!=fold_test$y))
+          ## record results
+          model.name.list[[index]]=c(index, r, i, "svm_lnr")
+          model.list[[index]]=model
+          performance.list[[index]]=c(err,f1,auc)
+          hyper.list[[index]]=c(grid.svm$c_val[a])
+          index=index+1
+          
+          
+          # radial SVM
+          model <-svm(y~., data=fold_train_svm, cost=grid.svm$c_val[1], kernel="radial", 
+                      gamma=grid.svm$gamma[1])
+          pred<-predict(model, fold_test_svm)
+
+          t<-table(pred, fold_test$y)
+          if (nrow(t)<2){
+            t<-rbind(t,c(0,0))
+          }
+          t<-t[2:1,2:1]
+          f1<-calculate_f1(t)
+          auc<-roc(fold_test$y, as.numeric(pred))$auc
+          err<-mean(as.numeric(pred!=fold_test$y))
+          ## record results
+          model.name.list[[index]]=c(index, r, i, "svm_rad")
+          model.list[[index]]=model
+          performance.list[[index]]=c(err,f1,auc)
+          hyper.list[[index]]=c(grid.svm$c_val[a], grid.svm$gamma[c])
+          index=index+1
+          
+          # polynomial SVM
+           model <-svm(y~., data=fold_train_svm, cost=grid.svm$c_val[1], kernel="polynomial", 
+                       gamma=grid.svm$gamma[1],coef0=grid.svm$coef0[1], degree=grid.svm$degree[1])
+          pred<-predict(model, fold_test_svm)
+          
+          t<-table(pred, fold_test$y)
+          if (nrow(t)<2){
+            t<-rbind(t,c(0,0))
+          }
+          t<-t[2:1,2:1]
+          f1<-calculate_f1(t)
+          auc<-roc(fold_test$y, as.numeric(pred))$auc
+          err<-mean(as.numeric(pred!=fold_test$y))
+          ## record results
+          model.name.list[[index]]=c(index, r, i, "svm_poly")
+          model.list[[index]]=model
+          performance.list[[index]]=c(err,f1,auc)
+          hyper.list[[index]]=c(grid.svm$c_val[a],grid.svm$coef0[b], grid.svm$gamma[c], grid.svm$degree[d])
+          index=index+1
+          
+            
+        }
+      }
+    }
+  }
+
+  
+  
+  # linear regression
+  # model <- lm(y~., data=fold_train)
+  
+  # classification tree using gini
+  model <- rpart(y~., 
+                data=fold_train,
+                parms=list(split="gini"))
+  
+  
+  pred<-predict(model, fold_test)  
+  
+  class<-round(pred)
+        t<-table(class, fold_test$y)
+        if (nrow(t)<2){
+          t<-rbind(t,c(0,0))
+        }
+        t<-t[2:1,2:1]
+        f1<-calculate_f1(t)
+        auc<-roc(fold_test$y, class)$auc
+        err<-mean(as.numeric(class!=fold_test$y))
+        ## record results
+        model.name.list[[index]]=c(index, r, i, "cls_tre_gini")
+        model.list[[index]]=model
+        performance.list[[index]]=c(err,f1,auc)
+        #hyper.list[[index]]=c(grid.rf$ntrees[a],grid.rf$mtries[b])
+        index=index+1
+
+        
+        
+  # classification tree using information 
+  model <- rpart(y~., 
+                data=fold_train,
+                parms=list(split="information"))
+  
+  
+  pred<-predict(model, fold_test)  
+  
+  class<-round(pred)
+        t<-table(class, fold_test$y)
+        if (nrow(t)<2){
+          t<-rbind(t,c(0,0))
+        }
+        t<-t[2:1,2:1]
+        f1<-calculate_f1(t)
+        auc<-roc(fold_test$y, class)$auc
+        err<-mean(as.numeric(class!=fold_test$y))
+        ## record results
+        model.name.list[[index]]=c(index, r, i, "cls_tre_info")
+        model.list[[index]]=model
+        performance.list[[index]]=c(err,f1,auc)
+        #hyper.list[[index]]=c(grid.rf$ntrees[a],grid.rf$mtries[b])
+        index=index+1
+
+        
+  # # lda
+  # 
+  #       model <- lda(y~., data=fold_train)
+  #       pred<-predict(model, fold_test)
+  #       pred
+  #       class<-round(as.numeric(pred))
+  #       t<-table(class, fold_test$y)
+  #       if (nrow(t)<2){
+  #         t<-rbind(t,c(0,0))
+  #       }
+  #       t<-t[2:1,2:1]
+  #       f1<-calculate_f1(t)
+  #       auc<-roc(fold_test$y, class)$auc
+  #       err<-mean(as.numeric(class!=fold_test$y))
+  #       ## record results
+  #       model.name.list[[index]]=c(index, r, i, "cls_tre_info")
+  #       model.list[[index]]=model
+  #       performance.list[[index]]=c(err,f1,auc)
+  #       #hyper.list[[index]]=c(grid.rf$ntrees[a],grid.rf$mtries[b])
+  #       index=index+1
+  # qda
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+}
+
+# generate table to present results
+results<-cbind(model.name.list, model.list, performance.list) # store all results
+final.table<-data.frame() # used for exhibition 
+for (i in 1:nrow(results)){
+  col1<-t(model.name.list[[i]]) # model name list
+  col2<-t(performance.list[[i]]) # performance list
+  row<-cbind(col1,col2)
+  final.table<-rbind(final.table,row)
+}
+names(final.table)<-c("index","repeats","fold", "model","err","f1","auc")
+final.table$err<-round(as.numeric(as.character(final.table$err)),digits=3)
+final.table$f1<-round(as.numeric(as.character(final.table$f1)),digits=3)
+final.table$auc<-round(as.numeric(as.character(final.table$auc)),digits=3)
+final.table$model<-as.character(final.table$model)
+final.table$`fold`<-as.numeric(as.character(final.table$`fold`))
+final.table$`repeats`<-as.numeric(as.character(final.table$`repeats`))
+final.table$index<-as.numeric(as.character(final.table$index))
+final.table
+
+
+good.models<-final.table%>%filter(err<0.35, auc>0.65)
+good.models
+
+```
+
+#### [5114] rfe feature selection
+
+```{r}
+###### dataset construction ######
+response<-c("CVDMEDST")
+Y<-dat5c %>% select (response) %>% mutate(
+  CVD_cat = as.factor(ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA))),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  
+)
+
+str(Y)
+X<-dat5c %>% select (!response)
+y<-Y$CVD_cat # y is binary class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+table(y)
+str(temp_dat)
+###### dataset construction ######
+
+control.rf<-rfeControl(
+  functions = rfFuncs, # random forest
+  method = 'cv',
+  number = 5
+)
+
+results.rfe.rf<-rfe(temp_dat[,-1], # x, predictors
+             temp_dat[,1], # y
+             sizes = c(1:31), # how many features should be kept
+             rfeControl = control.rf
+        
+)
+
+p.rfe.rf<-ggplot(data = results.rfe.rf, aes(x=results$Variables, y=results$Accuracy))+
+  geom_point()+
+  geom_line()
+
+p.rfe.rf
+
+results.rfe.rf$optVariables
 ```
 
 
