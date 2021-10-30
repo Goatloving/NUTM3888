@@ -2784,7 +2784,7 @@ performance.list<-list()
 hyper.list<-list()
 temp_dat<-droplevels(temp_dat)
 
-repeat_number<-10
+repeat_number<-5
 for (r in 1:repeat_number){
   for (i in 1:k_fold){
     fold_test<-temp_dat[folds[[i]],] # select folds[[i]] as test test
@@ -2794,6 +2794,11 @@ for (r in 1:repeat_number){
     
     # logistic regression
     model.lr<-glm(y~., family=binomial, data=fold_train)
+    
+    pred.lr.train<-predict(model.lr, fold_train, type="response")
+    class.lr.train<-round(pred.lr.train)
+    err.lr.train<-mean(as.numeric(class.lr.train!= fold_train$y)) # trainingh error rate
+    
     pred.lr<-predict(model.lr, fold_test, type="response") # predict classfication
     class.lr<-round(pred.lr)
     t<-table(class.lr, fold_test$y)[2:1,2:1] # confusion table
@@ -2803,7 +2808,7 @@ for (r in 1:repeat_number){
     ## record results
     model.name.list[[index]] = c(index, r, i, "plain")
     model.list[[index]] = model.lr
-    performance.list[[index]]=c(err.lr, f1.lr, auc.lr)
+    performance.list[[index]]=c(err.lr.train, err.lr, f1.lr, auc.lr)
     index=index+1
     
   
@@ -2813,6 +2818,10 @@ for (r in 1:repeat_number){
   
     # aic forward
     model<-step(model.lr.null, scope=list(lower=model.lr.null, upper=model.lr.full), k=2, trace =0)
+    pred.train<-predict(model, fold_train, type="response")
+    class.train<-round(pred.train)
+    err.train<-mean(as.numeric(class.train!= fold_train$y)) # trainingh error rate
+    
     pred<-predict(model, fold_test, type="response")
     class<-round(pred)
     t<-table(class, fold_test$y)[2:1, 2:1]
@@ -2822,11 +2831,17 @@ for (r in 1:repeat_number){
     ## record results
     model.name.list[[index]]=c(index, r, i, "aicfwd")
     model.list[[index]]=model
-    performance.list[[index]]=c(err,f1,auc)
+    performance.list[[index]]=c(err.train, err,f1,auc)
     index=index+1
   
     # bic forward
     model<-step(model.lr.null, scope=list(lower=model.lr.null, upper=model.lr.full), k=log(n), trace =0)
+    
+    pred.train<-predict(model, fold_train, type="response")
+    class.train<-round(pred.train)
+    err.train<-mean(as.numeric(class.train!= fold_train$y)) # trainingh error rate
+    
+    
     pred<-predict(model, fold_test, type="response")
     class<-round(pred)
     t<-table(class, fold_test$y)[2:1, 2:1]
@@ -2836,11 +2851,16 @@ for (r in 1:repeat_number){
     ## record results
     model.name.list[[index]]=c(index, r, i, "bicfwd")
     model.list[[index]]=model
-    performance.list[[index]]=c(err,f1,auc)
+    performance.list[[index]]=c(err.train, err,f1,auc)
     index=index+1
   
     # aic backward
     model<-step(model.lr.full, k=2, trace=0, data=fold_train)
+    
+    pred.train<-predict(model, fold_train, type="response")
+    class.train<-round(pred.train)
+    err.train<-mean(as.numeric(class.train!= fold_train$y)) # trainingh error rate
+    
     pred<-predict(model, fold_test, type="response")
     class<-round(pred)
     t<-table(class, fold_test$y)[2:1, 2:1]
@@ -2850,11 +2870,16 @@ for (r in 1:repeat_number){
     ## record results
     model.name.list[[index]]=c(index, r, i, "aicbwd")
     model.list[[index]]=model
-    performance.list[[index]]=c(err,f1,auc)
+    performance.list[[index]]=c(err.train, err,f1,auc)
     index=index+1
   
     # bic backward
     model<-step(model.lr.full, k=log(n), trace=0, data=fold_train)
+    
+    pred.train<-predict(model, fold_train, type="response")
+    class.train<-round(pred.train)
+    err.train<-mean(as.numeric(class.train!= fold_train$y)) # trainingh error rate
+    
     pred<-predict(model, fold_test, type="response")
     class<-round(pred)
     t<-table(class, fold_test$y)[2:1, 2:1]
@@ -2864,12 +2889,19 @@ for (r in 1:repeat_number){
     ## record results
     model.name.list[[index]]=c(index, r, i, "bicbwd")
     model.list[[index]]=model
-    performance.list[[index]]=c(err,f1,auc)
+    performance.list[[index]]=c(err.train, err,f1,auc)
     index=index+1
   
     # ridge regression
     model<-cv.glmnet(data.matrix(fold_train[,-1]), fold_train$y, alpha = 0, family = "binomial")
+    pred.train<-predict(model, newx=data.matrix(fold_train[,-1]), s="lambda.1se")
+    testprob.train<-1/(1+exp(-pred.train))
+    class.train<-round(testprob.train)
+    err.train<-mean(as.numeric(class.train!= fold_train$y)) # trainingh error rate
+    
+    
     pred<-predict(model, newx=data.matrix(fold_test[,-1]), s="lambda.1se")
+    
     testprob <- 1/(1+exp(-pred))
     class<-round(testprob)
     t<-table(class, fold_test$y)
@@ -2883,15 +2915,24 @@ for (r in 1:repeat_number){
     ## record results
     model.name.list[[index]]=c(index, r, i, "ridge")
     model.list[[index]]=model
-    performance.list[[index]]=c(err,f1,auc)
+    performance.list[[index]]=c(err.train, err,f1,auc)
     index=index+1
   
   
     # lasso regression
     model<-cv.glmnet(data.matrix(fold_train[,-1]), fold_train$y, alpha = 1, family = "binomial")
-    pred<-predict(model, newx=data.matrix(fold_test[,-1]), s="lambda.1se")
-    testprob <- 1/(1+exp(-pred))
-    class<-round(testprob)
+    
+    pred.train<-predict(model, newx=data.matrix(fold_train[,-1]), s="lambda.1se", type="response")
+    pred.train
+  
+    #testprob.train<-1/(1+exp(-pred.train))
+    class.train<-round(pred.train)
+    err.train<-mean(as.numeric(class.train!= fold_train$y)) # trainingh error rate
+    
+    
+    pred<-predict(model, newx=data.matrix(fold_test[,-1]), s="lambda.1se",type="response")
+    #testprob <- 1/(1+exp(-pred))
+    class<-round(pred)
     t<-table(class, fold_test$y)
     if (nrow(t)<2){
       t<-rbind(t,c(0,0))
@@ -2903,13 +2944,19 @@ for (r in 1:repeat_number){
     ## record results
     model.name.list[[index]]=c(index, r, i, "lasso")
     model.list[[index]]=model
-    performance.list[[index]]=c(err,f1,auc)
+    performance.list[[index]]=c(err.train, err,f1,auc)
     index=index+1
   
     # firth regression
   
     model<-brglm(y~., data=fold_train)
-    pred<-predict(model, fold_test)
+    
+    pred.train<-predict(model,fold_train, type="response")
+    
+    class.train<-round(pred.train)
+    err.train<-mean(as.numeric(class.train!= fold_train$y)) # trainingh error rate
+    
+    pred<-predict(model, fold_test, type="response")
     class<-round(pred)
     t<-table(class, fold_test$y)
     if (nrow(t)<2){
@@ -2922,7 +2969,7 @@ for (r in 1:repeat_number){
     ## record results
     model.name.list[[index]]=c(index, r, i, "firth")
     model.list[[index]]=model
-    performance.list[[index]]=c(err,f1,auc)
+    performance.list[[index]]=c(err.train, err,f1,auc)
     index=index+1
   
     # random forest
@@ -2940,20 +2987,27 @@ for (r in 1:repeat_number){
               seed=2021,
               respect.unordered.factors='order',
            )
+          
+          pred.train<-predict(model,fold_train, type="response")
+          class.train<-round(pred.train)
+          err.train<-mean(as.numeric(class.train!= fold_train$y)) # trainingh error rate
+          
           pred<-predict(model, fold_test, type="response") # numeric predicted values
-          class<-round(pred)
+          
+          pred
+          class<-pred
           t<-table(class, fold_test$y)
           if (nrow(t)<2){
             t<-rbind(t,c(0,0))
           }
           t<-t[2:1,2:1]
           f1<-calculate_f1(t)
-          auc<-roc(fold_test$y, class)$auc
+          auc<-roc(fold_test$y,as.numeric(class))$auc
           err<-mean(as.numeric(class!=fold_test$y))
           ## record results
           model.name.list[[index]]=c(index, r, i, "rf")
           model.list[[index]]=model
-          performance.list[[index]]=c(err,f1,auc)
+          performance.list[[index]]=c(err.train, err,f1,auc)
           hyper.list[[index]]=c(grid.rf$ntrees[a],grid.rf$mtries[b])
           index=index+1
   
@@ -2993,6 +3047,10 @@ for (r in 1:repeat_number){
         hid_vec<-as.vector(matrix(grid.nn$each_layer[b],nrow = grid.nn$hidden_layer[a], ncol=1))
         # train model:
         model<-neuralnet(y~., data=fold_train_std_nn, hidden=hid_vec, stepmax=1e7)
+        pred.train<-predict(model, fold_train_std_nn)
+        class.train<-as.numeric(pred.train[,1]>pred.train[,2]) 
+        err.train<-mean(as.numeric(class.train!=fold_test$y))
+        
         pred<-predict(model, fold_test_std_nn)
         class<-as.numeric(pred[,1]>pred[,2]) # pred[,1] is for y=1, pred[,2] for y=0
         t<-table(class, fold_test_std_nn$y)
@@ -3033,15 +3091,22 @@ for (r in 1:repeat_number){
             
             # linear SVM
             model <-svm(y~., data=fold_train_svm, cost=grid.svm$c_val[1], kernel="linear")
-            pred<-predict(model, fold_test_svm)
-  
+            
+            pred.train<-predict(model,fold_train_svm, type="response")
+    
+            class.train<-pred.train
+            err.train<-mean(as.numeric(class.train!= fold_test_svm$y)) # trainingh error rate
+            
+            
+            pred<-predict(model, fold_test_svm,type="response")
+            class<-pred
             t<-table(pred, fold_test$y)
             if (nrow(t)<2){
               t<-rbind(t,c(0,0))
             }
             t<-t[2:1,2:1]
             f1<-calculate_f1(t)
-            auc<-roc(fold_test$y, class)$auc
+            auc<-roc(fold_test$y, as.numeric(class))$auc
             err<-mean(as.numeric(class!=fold_test$y))
             ## record results
             model.name.list[[index]]=c(index, r, i, "svm_lnr")
@@ -3054,6 +3119,12 @@ for (r in 1:repeat_number){
             # radial SVM
             model <-svm(y~., data=fold_train_svm, cost=grid.svm$c_val[1], kernel="radial", 
                         gamma=grid.svm$gamma[1])
+            
+            pred.train<-predict(model,fold_test_svm, type="response")
+            pred.train
+            class.train<-pred.train
+            err.train<-mean(as.numeric(class.train!= fold_test_svm$y)) # trainingh error rate
+            
             pred<-predict(model, fold_test_svm)
   
             t<-table(pred, fold_test$y)
@@ -3074,6 +3145,11 @@ for (r in 1:repeat_number){
             # polynomial SVM
              model <-svm(y~., data=fold_train_svm, cost=grid.svm$c_val[1], kernel="polynomial", 
                          gamma=grid.svm$gamma[1],coef0=grid.svm$coef0[1], degree=grid.svm$degree[1])
+             
+            pred.train<-predict(model,fold_test_svm, type="response")
+    
+            class.train<-pred.train
+            err.train<-mean(as.numeric(class.train!= fold_test_svm$y)) # trainingh error rate
             pred<-predict(model, fold_test_svm)
             
             t<-table(pred, fold_test$y)
@@ -3107,6 +3183,9 @@ for (r in 1:repeat_number){
                   data=fold_train,
                   parms=list(split="gini"))
     
+    pred.train<-predict(model, fold_train)
+    class.train<-round(pred.train)
+    err.train<-mean(as.numeric(class.train!=fold_train$y))
     
     pred<-predict(model, fold_test)  
     
@@ -3122,7 +3201,7 @@ for (r in 1:repeat_number){
           ## record results
           model.name.list[[index]]=c(index, r, i, "cls_tre_gini")
           model.list[[index]]=model
-          performance.list[[index]]=c(err,f1,auc)
+          performance.list[[index]]=c(err.train, err,f1,auc)
           #hyper.list[[index]]=c(grid.rf$ntrees[a],grid.rf$mtries[b])
           index=index+1
   
@@ -3133,6 +3212,9 @@ for (r in 1:repeat_number){
                   data=fold_train,
                   parms=list(split="information"))
     
+    pred.train<-predict(model, fold_train)
+    class.train<-round(pred.train)
+    err.train<-mean(as.numeric(class.train!=fold_train$y))
     
     pred<-predict(model, fold_test)  
     
@@ -3148,7 +3230,7 @@ for (r in 1:repeat_number){
           ## record results
           model.name.list[[index]]=c(index, r, i, "cls_tre_info")
           model.list[[index]]=model
-          performance.list[[index]]=c(err,f1,auc)
+          performance.list[[index]]=c(err.train, err,f1,auc)
           #hyper.list[[index]]=c(grid.rf$ntrees[a],grid.rf$mtries[b])
           index=index+1
   
@@ -3194,6 +3276,13 @@ for (r in 1:repeat_number){
         # qda
           
         model<-qda(y~., data=fold_train)
+        pred.train<-predict(model, fold_train, type="response")
+        pred.train
+        
+        
+         
+    err.train<-mean(as.numeric(pred.train$class!=fold_train$y))
+        
         pred<-predict(model, fold_test)
         t<-table(pred$class, fold_test$y)
         if (nrow(t)<2){
@@ -3201,12 +3290,13 @@ for (r in 1:repeat_number){
         }
         t<-t[2:1,2:1]
         f1<-calculate_f1(t)
-        auc<-roc(fold_test$y, class)$auc
-        err<-mean(as.numeric(class!=fold_test$y))
+        
+        auc<-roc(fold_test$y, as.numeric(pred$class))$auc
+        err<-mean(as.numeric(pred$class!=fold_test$y))
         ## record results
         model.name.list[[index]]=c(index, r, i, "qda")
         model.list[[index]]=model
-        performance.list[[index]]=c(err,f1,auc)
+        performance.list[[index]]=c(err.train, err,f1,auc)
     
         index=index+1
           
