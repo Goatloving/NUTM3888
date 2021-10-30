@@ -1,5 +1,36 @@
+cv_knn <- function(df,df_valid,V,k_vals) {
+  n <- nrow(df)
+  sets <- sample(rep(1:V,times=n)[1:n],n)
+  errors <- matrix(NA,V,length(k_vals))
+  for (j in 1:length(k_vals)) {
+    for (i in 1:V) {
+      test_inds  <- which(sets==i)
+      train_inds <- which(sets!=i)
+      df_test  <- df[test_inds,]
+      df_train <- df[train_inds,]
+      y_hat <- knn(train = df_train[,-1], 
+                   test  = df_test[,-1], 
+                   cl=df_train$y, 
+                   k=k_vals[j])
+      errors[i,j] <- sum(y_hat!=df_test$y)
+    }
+  }
+  
+  errs <- 100*apply(errors,2,sum)/n
+  best <- which.min(errs)
+  e_best <- errs[best]
+  
+  y_hat <- knn(train = df[,-1], 
+               test = df_valid[,-1], 
+               cl=df$y, 
+               k=k_vals[best])
+  
+  return(list(errs=errs,y_hat=y_hat))
+}
 
-normalization_df_without_y(x){
+
+
+normalization_df_without_y<-function(x){
   x_std<-mutate_if(is.numeric, list(mystd))
   return (x_std)
 }
