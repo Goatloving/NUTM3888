@@ -1,0 +1,264 @@
+---
+title: "Untitled"
+author: "me"
+date: "02/11/2021"
+output: html_document
+---
+
+
+
+
+```{r}
+predictor_list_2 <- c("CVDMEDST","AGEC", "EIBMR1", "PREVAT1", "PROVAT1", "RETEQT1", "B1T1", "B2T1", "B3T1", "NIACINT1", "FOLATT1", "FOLICT1", "TOTFOLT1", "FOLEQT1", "B6T1", "B12T1", "VITCT1", "VITET1", "CALCT1", "IODINET1", "IRONT1", "MAGT1", "PHOST1", "POTAST1", "SELT1", "SODIUMT1", "ZINCT1", "CAFFT1", "CHOLT1", "SATFATT1", "MUFATT1", "PUFATT1", "LAT1", "ALAT1", "LCN3T1", "TRANST1", "PROPER1", "FATPER1", "LAPER1", "ALAPER1", "CHOPER1", "SUGPER1", "STARPER1", "ALCPER1", "SATPER1", "TRANPER1", "FIBRPER1", "MONOPER1", "POLYPER1")
+dat_m <- dat%>% dplyr::select(predictor_list_2) %>% filter(AGEC>=19, AGEC<=64)
+str(dat_m)
+
+```
+
+```{r}
+dat_m_nomiss <- dat_m %>% drop_na()
+str(dat_m_nomiss)
+```
+```{r}
+datm_pca <- prcomp(dat_m_nomiss[-1], center = TRUE, scale = TRUE)
+datm_pca
+```
+
+```{r}
+lambda <- datm_pca$sdev^2
+proportion <- lambda/sum(lambda)
+cum_prop <- cumsum(proportion)
+
+df_variance <- data.frame(
+  variance = lambda,
+  proportion = proportion,
+  cum_prop = cum_prop) %>%
+  round(digits = 2)
+
+pca_smry <- t(df_variance) %>%
+  as.data.frame()
+
+colnames(pca_smry) <- colnames(datm_pca$rotation)
+rownames(pca_smry) <- c("Variance", "proportion", "Cum. prop")
+
+library(flextable)
+ft_cumprop <- flextable(
+  pca_smry %>%
+    rownames_to_column("statistic")) %>%
+  autofit()
+ft_cumprop
+
+```
+
+```{r}
+###### dataset construction ######
+response<-c("CVDMEDST")
+Y<-dat_m_nomiss %>% dplyr::select (response) %>% mutate(
+  CVD_cat = as.numeric(ifelse((CVDMEDST==4), 0, ifelse((CVDMEDST==3|CVDMEDST==2|CVDMEDST==1),1, NA))),
+  CVD_num = as.numeric(as.character(CVDMEDST)),
+  
+)
+
+str(Y)
+X<-dat_m_nomiss %>% dplyr::select (!response)
+y<-Y$CVD_cat # y is binary class
+temp_dat<-cbind(y,X) # construct temp dataset for analysis
+table(y)
+str(temp_dat)
+###### dataset construction ######
+
+
+
+
+k_fold = 10
+folds<-createFolds(y=temp_dat[,1],k=k_fold)
+
+
+index = 1
+model.list<-list()
+model.name.list<-list()
+performance.list<-list()
+hyper.list<-list()
+temp_dat<-droplevels(temp_dat)
+
+r<-2
+for (i in 1:k_fold){
+  fold_test<-temp_dat[folds[[i]],] # select folds[[i]] as test test
+  fold_train<-temp_dat[-folds[[i]],] # remaining is training set
+  
+  n<-nrow(fold_train)
+  
+  # logistic regression
+  model.lr<-glm(y~., family=binomial, data=fold_train)
+  pred.lr<-predict(model.lr, fold_test, type="response") # predict classfication
+  class.lr<-round(pred.lr)
+  t<-table(class.lr, fold_test$y)[2:1,2:1] # confusion table
+  f1.lr<-calculate_f1(t)
+  auc.lr<-roc(fold_test$y, pred.lr)$auc # calculate AUC
+  err.lr<-mean(as.numeric(class.lr!= fold_test$y)) # error rate
+  ## record results
+  model.name.list[[index]] = c(index, r, i, "plain")
+  model.list[[index]] = model.lr
+  performance.list[[index]]=c(err.lr, f1.lr, auc.lr)
+  index=index+1
+  
+
+  # full model vs. null model
+  model.lr.full<-glm(y~., data=fold_train, family = binomial)
+  model.lr.null<-glm(y~1, data=fold_train, family = binomial)
+
+  # aic forward
+  model<-step(model.lr.null, scope=list(lower=model.lr.null, upper=model.lr.full), k=2, trace =0)
+  pred<-predict(model, fold_test, type="response")
+  class<-round(pred)
+  t<-table(class, fold_test$y)[2:1, 2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "aicfwd")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+  # bic forward
+  model<-step(model.lr.null, scope=list(lower=model.lr.null, upper=model.lr.full), k=log(n), trace =0)
+  pred<-predict(model, fold_test, type="response")
+  class<-round(pred)
+  t<-table(class, fold_test$y)[2:1, 2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "bicfwd")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+  # aic backward
+  model<-step(model.lr.full, k=2, trace=0, data=fold_train)
+  pred<-predict(model, fold_test, type="response")
+  class<-round(pred)
+  t<-table(class, fold_test$y)[2:1, 2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "aicbwd")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+  # bic backward
+  model<-step(model.lr.full, k=log(n), trace=0, data=fold_train)
+  pred<-predict(model, fold_test, type="response")
+  class<-round(pred)
+  t<-table(class, fold_test$y)[2:1, 2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "bicbwd")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+  # ridge regression
+  model<-cv.glmnet(data.matrix(fold_train[,-1]), fold_train$y, alpha = 0, family = "binomial")
+  pred<-predict(model, newx=data.matrix(fold_test[,-1]), s="lambda.1se")
+  testprob <- 1/(1+exp(-pred))
+  class<-round(testprob)
+  t<-table(class, fold_test$y)
+  if (nrow(t)<2){
+    t<-rbind(t,c(0,0))
+  }
+  t<-t[2:1,2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "ridge")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+
+  # lasso regression
+  model<-cv.glmnet(data.matrix(fold_train[,-1]), fold_train$y, alpha = 1, family = "binomial")
+  pred<-predict(model, newx=data.matrix(fold_test[,-1]), s="lambda.1se")
+  testprob <- 1/(1+exp(-pred))
+  class<-round(testprob)
+  t<-table(class, fold_test$y)
+  if (nrow(t)<2){
+    t<-rbind(t,c(0,0))
+  }
+  t<-t[2:1,2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "lasso")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+
+  # firth regression
+
+  model<-brglm(y~., data=fold_train)
+  pred<-predict(model, fold_test)
+  class<-round(pred)
+  t<-table(class, fold_test$y)
+  if (nrow(t)<2){
+    t<-rbind(t,c(0,0))
+  }
+  t<-t[2:1,2:1]
+  f1<-calculate_f1(t)
+  auc<-roc(fold_test$y, pred)$auc
+  err<-mean(as.numeric(class!=fold_test$y))
+  ## record results
+  model.name.list[[index]]=c(index, r, i, "firth")
+  model.list[[index]]=model
+  performance.list[[index]]=c(err,f1,auc)
+  index=index+1
+}
+```
+
+```{r}
+# generate table to present results
+results<-cbind(model.name.list, model.list, performance.list) # store all results
+final.table<-data.frame() # used for exhibition 
+for (i in 1:nrow(results)){
+  col1<-t(model.name.list[[i]]) # model name list
+  col2<-t(performance.list[[i]]) # performance list
+  row<-cbind(col1,col2)
+  final.table<-rbind(final.table,row)
+}
+names(final.table)<-c("index","repeats","fold", "model","err","f1","auc")
+final.table$err<-round(as.numeric(as.character(final.table$err)),digits=3)
+final.table$f1<-round(as.numeric(as.character(final.table$f1)),digits=3)
+final.table$auc<-round(as.numeric(as.character(final.table$auc)),digits=3)
+final.table$model<-as.character(final.table$model)
+final.table$`fold`<-as.numeric(as.character(final.table$`fold`))
+final.table$`repeats`<-as.numeric(as.character(final.table$`repeats`))
+final.table$index<-as.numeric(as.character(final.table$index))
+final.table
+
+
+good.models<-final.table%>%filter(err<0.30, auc>0.65)
+good.models
+
+
+#summary(model.list[[181]])
+summary(model.list[[5]])
+
+#model.list[[279]]# random forest 
+
+model.list[[43]]
+#vip::vip(model.list[[279]],num_features=5,bar=FALSE)
+
+
+ggplot(data=final.table, aes(x=auc, y=err, color=model))+
+  geom_point()
+
+
+```
